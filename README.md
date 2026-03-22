@@ -92,4 +92,4 @@ npm start           # run locally
 
 ## License
 
-MIT
+[MIT](LICENSE) — see `LICENSE` in the repo.
