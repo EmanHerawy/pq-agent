@@ -2,6 +2,13 @@
 
 Interactive CLI to scaffold monorepo projects for onchain AI agents.
 
+## Basic flow
+
+1. **Scaffold** — Run `npx scaffold-agent@latest` and complete the wizard (project name, secrets mode, optional agent wallet, LLM provider, Foundry/Hardhat/none, Next.js / Vite / Python). The CLI writes the monorepo and runs **`npm install`** at the repo root unless you set **`SCAFFOLD_SKIP_NPM_INSTALL=1`**.
+2. **Contracts (if you picked a chain)** — In one terminal: **`just chain`**. Then **`just fund`** (local ETH to deployer + optional agent) and **`just deploy`** (compile, deploy, generate ABI types). Auto-fund during scaffold only works if a node is already on **`RPC_URL`** (default `http://127.0.0.1:8545`); otherwise fund after you start the chain. Use **`SCAFFOLD_SKIP_AUTO_FUND=1`** to skip funding during scaffold.
+3. **Network & env** — Set **`targetNetwork`** (and optional **`rpcOverrides`**) in **`scaffold.config.ts`**. Put non-secrets in repo-root **`.env`**; use **`just enc`** / 1Claw vault for keys when using encrypted or vault modes.
+4. **Run the app** — **`just start`** (Next.js, Vite, or Python agent, depending on what you chose). Use **`just accounts`**, **`just balances`**, and **`/identity`** / **`/balances`** in the web apps as needed.
+
 ## Usage
 
 Published on npm as [**`scaffold-agent`**](https://www.npmjs.com/package/scaffold-agent). The CLI binary is also **`scaffold-agent`**.
@@ -147,8 +154,6 @@ npm publish --tag latest
 ```
 
 Optional: **`npm publish --provenance --tag latest`** if you use [npm provenance](https://docs.npmjs.com/generating-provenance-statements) from your environment.
-
-If you previously published **`@1claw/scaffold-agent`**, deprecate that package on npm (`npm deprecate @1claw/scaffold-agent@"< version" "Use scaffold-agent instead"`) so users migrate to the single package.
 
 ## License
 
