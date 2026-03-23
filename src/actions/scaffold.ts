@@ -201,6 +201,7 @@ function writeRootFiles(root: string, config: ScaffoldConfig) {
     ".env",
     ".env.secrets.encrypted",
     ".env.local",
+    ".claude/settings.local.json",
     "private-keys/",
     ".DS_Store",
     "*.log",
@@ -218,6 +219,56 @@ function writeRootFiles(root: string, config: ScaffoldConfig) {
     gitignoreLines.push("packages/foundry/lib/");
   }
   file(root, ".gitignore", gitignoreLines.join("\n") + "\n");
+
+  const cursorIgnoreLines = [
+    "# Cursor / AI: do not load these paths into LLM context (secrets & keys)",
+    ".env",
+    ".env.*",
+    "!.env.example",
+    "!.env.sample",
+    ".env.local",
+    ".env.secrets.encrypted",
+    ".env.secrets",
+    "private-keys/",
+    "**/*.pem",
+    "**/*.p12",
+    "**/id_rsa",
+    "**/id_rsa.*",
+    "**/*.key",
+  ];
+  file(root, ".cursorignore", cursorIgnoreLines.join("\n") + "\n");
+
+  dir(root, ".claude");
+  file(
+    join(root, ".claude"),
+    "settings.json",
+    `${JSON.stringify(
+      {
+        permissions: {
+          deny: [
+            "Read(./.env)",
+            "Read(./.env.local)",
+            "Read(./.env.development)",
+            "Read(./.env.development.local)",
+            "Read(./.env.production)",
+            "Read(./.env.production.local)",
+            "Read(./.env.test)",
+            "Read(./.env.staging)",
+            "Read(./.env.secrets)",
+            "Read(./.env.secrets.encrypted)",
+            "Read(./private-keys/**)",
+            "Read(./**/*.pem)",
+            "Read(./**/*.p12)",
+            "Read(./**/id_rsa)",
+            "Read(./**/id_rsa.*)",
+            "Read(./**/*.key)",
+          ],
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
 
   const readme = `# ${config.projectName}
 
@@ -248,6 +299,8 @@ ${config.chain !== "none" ? "| \`just chain\` | Start local blockchain |\n| \`ju
 | \`just generate\` | Generate a deployer wallet (password prompt if \`.env.secrets.encrypted\` exists) |
 
 ## Secrets
+
+**\`.cursorignore\`** (Cursor) keeps \`.env\`, encrypted secrets, \`private-keys/\`, and common key files out of LLM context. **\`.claude/settings.json\`** sets **Claude Code** \`permissions.deny\` \`Read(...)\` rules for the same paths (Claude Code does not read \`.cursorignore\`). \`.claude/settings.local.json\` is gitignored for machine-specific overrides. Adjust either file if you add other secret locations.
 
 ${
   config.secrets.mode === "oneclaw"
