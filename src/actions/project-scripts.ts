@@ -1,4 +1,23 @@
+import { readFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ENV_SECRET_KEY_NAMES } from "./env.js";
+
+const __projectScriptsDir = dirname(fileURLToPath(import.meta.url));
+
+/** Bundled next to dist/cli.js as dist/secret-add.mjs (see tsup onSuccess); dev: src/scaffold-templates. */
+export function getSecretAddScript(): string {
+  const candidates = [
+    join(__projectScriptsDir, "secret-add.mjs"),
+    join(__projectScriptsDir, "..", "scaffold-templates", "secret-add.mjs"),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return readFileSync(p, "utf8");
+  }
+  throw new Error(
+    "secret-add.mjs not found (expected dist/secret-add.mjs after npm run build, or src/scaffold-templates/secret-add.mjs in dev).",
+  );
+}
 
 /** Encrypted secrets + helpers (matches `env.ts` AES-256-GCM layout). */
 export function getSecretsCryptoScript(): string {
@@ -201,14 +220,190 @@ main().catch((e) => {
 `;
 }
 
+/** RPC + chain ids for `deploy-*` / `verify-*` (kept in sync with scaffold network names). */
+export function getDeployNetworksModuleScript(): string {
+  return `/**
+ * Shared deploy/verify network resolution (used by deploy-foundry, deploy-hardhat, verify-*).
+ * Override RPC for public chains with RPC_URL in .env.
+ */
+const DEFAULT_RPC = {
+  localhost: "http://127.0.0.1:8545",
+  sepolia: "https://rpc.sepolia.org",
+  base: "https://mainnet.base.org",
+  baseSepolia: "https://sepolia.base.org",
+  ethereum: "https://eth.llamarpc.com",
+  mainnet: "https://eth.llamarpc.com",
+  polygon: "https://polygon-rpc.com",
+  bnb: "https://bsc-dataseed.binance.org",
+  bsc: "https://bsc-dataseed.binance.org",
+};
+
+const CHAIN_IDS = {
+  localhost: 31337,
+  sepolia: 11155111,
+  base: 8453,
+  baseSepolia: 84532,
+  ethereum: 1,
+  mainnet: 1,
+  polygon: 137,
+  bnb: 56,
+  bsc: 56,
+};
+
+/** \`forge verify-contract --chain <x>\` */
+const FORGE_CHAIN = {
+  localhost: "31337",
+  sepolia: "sepolia",
+  base: "base",
+  baseSepolia: "base-sepolia",
+  ethereum: "mainnet",
+  mainnet: "mainnet",
+  polygon: "polygon",
+  bnb: "bsc",
+  bsc: "bsc",
+};
+
+const ALIASES = {
+  local: "localhost",
+  anvil: "localhost",
+  "31337": "localhost",
+  eth: "ethereum",
+  matic: "polygon",
+  base_sepolia: "baseSepolia",
+  "base-sepolia": "baseSepolia",
+  basesepolia: "baseSepolia",
+};
+
+export function normalizeNetwork(name) {
+  const raw = String(name ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-");
+  const compact = raw.replace(/-/g, "");
+  const n = compact === "basesepolia" ? "baseSepolia" : raw;
+  const k = ALIASES[n] || ALIASES[compact] || n;
+  if (!DEFAULT_RPC[k]) {
+    throw new Error(
+      'Unknown network "' +
+        name +
+        '". Use: localhost, sepolia, base, baseSepolia, ethereum, polygon, bnb',
+    );
+  }
+  return k === "mainnet" ? "ethereum" : k;
+}
+
+function scanArgvForNetwork(argv, initial) {
+  let network = initial;
+  const args = [...argv];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--network" || a === "-n") {
+      network = args[i + 1];
+      if (!network) throw new Error("--network requires a value (e.g. base)");
+      i++;
+      continue;
+    }
+    if (a.startsWith("--network=")) {
+      network = a.slice("--network=".length);
+      continue;
+    }
+    if (!a.startsWith("-") && (network === null || network === undefined || network === "")) {
+      network = a;
+    }
+  }
+  return network;
+}
+
+/** deploy-foundry / deploy-hardhat (CLI / --network overrides DEPLOY_NETWORK) */
+export function parseDeployNetwork(argv) {
+  let network = scanArgvForNetwork(argv, null);
+  if (!(network || "").trim()) network = (process.env.DEPLOY_NETWORK || "").trim();
+  const resolved = (network || "localhost").trim();
+  return normalizeNetwork(resolved);
+}
+
+/** verify-* ; argv / VERIFY_NETWORK, else default sepolia */
+export function parseVerifyNetwork(argv) {
+  let network = scanArgvForNetwork(argv, null);
+  if (!(network || "").trim()) network = (process.env.VERIFY_NETWORK || "").trim();
+  let resolved = (network || "").trim();
+  if (!resolved) {
+    resolved = "sepolia";
+    console.error(
+      "verify: no network specified — using sepolia (try: just verify base)",
+    );
+  }
+  return normalizeNetwork(resolved);
+}
+
+export function getRpcUrl(networkKey) {
+  const k = normalizeNetwork(networkKey);
+  if (k === "localhost") return DEFAULT_RPC.localhost;
+  const fromEnv = (process.env.RPC_URL || "").trim();
+  if (fromEnv) return fromEnv;
+  return DEFAULT_RPC[k];
+}
+
+export function getChainId(networkKey) {
+  return CHAIN_IDS[normalizeNetwork(networkKey)];
+}
+
+export function getForgeChain(networkKey) {
+  return FORGE_CHAIN[normalizeNetwork(networkKey)];
+}
+
+export function isLocalNetwork(networkKey) {
+  return normalizeNetwork(networkKey) === "localhost";
+}
+
+/** Hardhat \`--network\` name (ethereum mainnet → \`mainnet\`) */
+export function getHardhatNetworkName(networkKey) {
+  const k = normalizeNetwork(networkKey);
+  if (k === "ethereum") return "mainnet";
+  return k;
+}
+
+/** Which API key env var to prefer for block explorer verification */
+export function getExplorerKeyEnv(networkKey) {
+  const k = normalizeNetwork(networkKey);
+  if (k === "base" || k === "baseSepolia") return "BASESCAN_API_KEY";
+  if (k === "polygon") return "POLYGONSCAN_API_KEY";
+  if (k === "bnb") return "BSCSCAN_API_KEY";
+  return "ETHERSCAN_API_KEY";
+}
+
+export function getExplorerApiKey(networkKey) {
+  const primary = getExplorerKeyEnv(networkKey);
+  const k = normalizeNetwork(networkKey);
+  const v =
+    (process.env[primary] || "").trim() ||
+    (process.env.ETHERSCAN_API_KEY || "").trim();
+  if (!v) {
+    throw new Error(
+      "Set " +
+        primary +
+        " or ETHERSCAN_API_KEY in .env to verify on " +
+        k,
+    );
+  }
+  return v;
+}
+`;
+}
+
 export function getDeployFoundryScript(): string {
   return `#!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { parseDeployNetwork, getRpcUrl } from "./deploy-networks.mjs";
 
 const root = process.cwd();
 const foundry = join(root, "packages", "foundry");
+
+const network = parseDeployNetwork(process.argv.slice(2));
+const rpcUrl = getRpcUrl(network);
+console.log("Deploy network:", network, "RPC:", rpcUrl);
 
 function runForge(args) {
   const r = spawnSync("forge", args, {
@@ -234,7 +429,7 @@ runForge([
   "script/Deploy.s.sol:Deploy",
   "--broadcast",
   "--rpc-url",
-  "http://127.0.0.1:8545",
+  rpcUrl,
 ]);
 
 const gen = spawnSync(process.execPath, ["scripts/generate-abi-types.mjs"], {
@@ -250,15 +445,17 @@ export function getDeployHardhatScript(): string {
   return `#!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { parseDeployNetwork, getHardhatNetworkName } from "./deploy-networks.mjs";
 
 const root = process.cwd();
 const hh = join(root, "packages", "hardhat");
-const network = process.env.HARDHAT_NETWORK || "localhost";
+const network = getHardhatNetworkName(parseDeployNetwork(process.argv.slice(2)));
+console.log("Deploy network:", network);
 
 let r = spawnSync("npx", ["hardhat", "deploy", "--network", network], {
   cwd: hh,
   stdio: "inherit",
-  env: process.env,
+  env: { ...process.env, HARDHAT_NETWORK: network },
 });
 if (r.status !== 0) process.exit(r.status ?? 1);
 
@@ -268,6 +465,148 @@ r = spawnSync(process.execPath, ["scripts/generate-abi-types.mjs"], {
   env: process.env,
 });
 if (r.status !== 0) process.exit(r.status ?? 1);
+`;
+}
+
+export function getVerifyFoundryScript(): string {
+  return `#!/usr/bin/env node
+import { spawnSync } from "node:child_process";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import {
+  parseVerifyNetwork,
+  getChainId,
+  getForgeChain,
+  isLocalNetwork,
+  getExplorerApiKey,
+} from "./deploy-networks.mjs";
+
+const root = process.cwd();
+const foundry = join(root, "packages", "foundry");
+
+const network = parseVerifyNetwork(process.argv.slice(2));
+
+if (isLocalNetwork(network)) {
+  console.log("Skipping explorer verification for localhost (chain 31337).");
+  process.exit(0);
+}
+
+const chainId = getChainId(network);
+const broadcastDir = join(
+  foundry,
+  "broadcast",
+  "Deploy.s.sol",
+  String(chainId),
+);
+const runLatest = join(broadcastDir, "run-latest.json");
+if (!existsSync(runLatest)) {
+  console.error("Missing", runLatest);
+  console.error("Deploy first: just deploy " + network);
+  process.exit(1);
+}
+
+const run = JSON.parse(readFileSync(runLatest, "utf8"));
+const txs = run.transactions || [];
+const created = txs.find(
+  (t) =>
+    t.transactionType === "CREATE" &&
+    (t.contractName === "AgentWallet" || t.contractName?.includes("AgentWallet")),
+);
+if (!created?.contractAddress) {
+  console.error("Could not find AgentWallet CREATE in run-latest.json");
+  process.exit(1);
+}
+
+const address = created.contractAddress;
+const agentRaw = (process.env.AGENT_ADDRESS || "").trim() || "0x0000000000000000000000000000000000000000";
+const agentAddr = agentRaw.startsWith("0x") ? agentRaw : "0x" + agentRaw;
+
+const enc = spawnSync(
+  "cast",
+  ["abi-encode", "constructor(address)", agentAddr],
+  { cwd: foundry, encoding: "utf8" },
+);
+if (enc.status !== 0) {
+  console.error(enc.stderr || "cast abi-encode failed");
+  process.exit(1);
+}
+const constructorArgs = enc.stdout.trim().replace(/^0x/i, "");
+
+const apiKey = getExplorerApiKey(network);
+const forgeChain = getForgeChain(network);
+
+console.log("Verifying AgentWallet at", address, "on", network, "(forge --chain", forgeChain + ")");
+
+const r = spawnSync(
+  "forge",
+  [
+    "verify-contract",
+    address,
+    "src/AgentWallet.sol:AgentWallet",
+    "--chain",
+    forgeChain,
+    "--constructor-args",
+    constructorArgs,
+    "--etherscan-api-key",
+    apiKey,
+  ],
+  { stdio: "inherit", cwd: foundry, env: process.env },
+);
+if (r.error) {
+  console.error(r.error);
+  process.exit(1);
+}
+process.exit(r.status ?? 1);
+`;
+}
+
+export function getVerifyHardhatScript(): string {
+  return `#!/usr/bin/env node
+import { spawnSync } from "node:child_process";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import {
+  parseVerifyNetwork,
+  isLocalNetwork,
+  getHardhatNetworkName,
+} from "./deploy-networks.mjs";
+
+const root = process.cwd();
+const hh = join(root, "packages", "hardhat");
+
+const logicalNetwork = parseVerifyNetwork(process.argv.slice(2));
+
+if (isLocalNetwork(logicalNetwork)) {
+  console.log("Skipping explorer verification for localhost.");
+  process.exit(0);
+}
+
+const network = getHardhatNetworkName(logicalNetwork);
+
+const artifactPath = join(hh, "deployments", network, "AgentWallet.json");
+if (!existsSync(artifactPath)) {
+  console.error("Missing", artifactPath);
+  console.error("Deploy first: just deploy " + network);
+  process.exit(1);
+}
+
+const artifact = JSON.parse(readFileSync(artifactPath, "utf8"));
+const addr = artifact.address;
+const args = Array.isArray(artifact.args) ? artifact.args : [];
+
+console.log("Verifying AgentWallet at", addr, "on", network);
+
+const verifyArgs = ["hardhat", "verify", "--network", network, addr, ...args.map(String)];
+const r = spawnSync("npx", verifyArgs, {
+  cwd: hh,
+  stdio: "inherit",
+  env: process.env,
+});
+if (r.error) {
+  console.error(r.error);
+  process.exit(1);
+}
+process.exit(r.status ?? 1);
 `;
 }
 
@@ -720,6 +1059,283 @@ async function main() {
     writeFileSync(DOTENV, raw, "utf8");
     console.log("  Updated " + DOTENV + "\\n");
   }
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+`;
+}
+
+/** Print deployer + agent Ethereum addresses and QR codes (repo-root .env). */
+export function getShowAccountsScript(): string {
+  return `#!/usr/bin/env node
+/**
+ * Display QR codes for deployer and agent public addresses.
+ * Run: just accounts
+ *
+ * Reads repo-root .env (same as just fund / generate). Does not require secrets password.
+ */
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { loadPublicEnvFile } from "./secrets-crypto.mjs";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(__dirname, "..");
+const DOTENV = join(ROOT, ".env");
+
+function mergePublicDotenv() {
+  const pub = loadPublicEnvFile(DOTENV);
+  for (const [k, v] of Object.entries(pub)) {
+    if (v !== undefined && v !== "" && process.env[k] === undefined) {
+      process.env[k] = v;
+    }
+  }
+}
+
+function pickAddr(...keys) {
+  for (const key of keys) {
+    const v = (process.env[key] || "").trim();
+    if (/^0x[a-fA-F0-9]{40}$/i.test(v)) return v;
+  }
+  return null;
+}
+
+async function main() {
+  mergePublicDotenv();
+  const deployer = pickAddr("DEPLOYER_ADDRESS");
+  const agent = pickAddr(
+    "AGENT_ADDRESS",
+    "NEXT_PUBLIC_AGENT_ADDRESS",
+    "VITE_AGENT_ADDRESS",
+  );
+
+  let qrcode;
+  try {
+    qrcode = (await import("qrcode-terminal")).default;
+  } catch {
+    qrcode = null;
+  }
+
+  console.log("\\n  Monorepo accounts (public addresses)\\n");
+
+  if (deployer) {
+    console.log("  Deployer (DEPLOYER_ADDRESS)");
+    console.log("  " + deployer + "\\n");
+    if (qrcode) {
+      qrcode.generate(deployer, { small: true });
+      console.log("");
+    }
+  } else {
+    console.log("  Deployer: not set — run just generate\\n");
+  }
+
+  if (agent) {
+    console.log("  Agent (AGENT_ADDRESS / NEXT_PUBLIC_AGENT_ADDRESS)");
+    console.log("  " + agent + "\\n");
+    if (qrcode) {
+      qrcode.generate(agent, { small: true });
+      console.log("");
+    }
+  } else {
+    console.log("  Agent: not set\\n");
+  }
+
+  if (!qrcode) {
+    console.log(
+      "  (Install qrcode-terminal at repo root: npm i -D qrcode-terminal)\\n",
+    );
+  }
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+`;
+}
+
+/** Native balance on every chain in network-definitions (repo-root .env; `npx tsx`). */
+export function getShowBalancesAllChainsScript(): string {
+  return `/**
+ * Print native token balances for DEPLOYER_ADDRESS and agent on all networks in network-definitions.
+ * Uses rpcOverrides from scaffold.config.ts (same rules as getActiveNetwork).
+ * Run from repo root: just balances
+ */
+import "dotenv/config";
+import { createPublicClient, http, formatEther } from "viem";
+import type { Chain } from "viem";
+import { NETWORKS, type NetworkKey } from "../network-definitions";
+import { rpcOverrides } from "../scaffold.config";
+
+function pickAddr(...keys: string[]): string | null {
+  for (const key of keys) {
+    const v = (process.env[key] || "").trim();
+    if (/^0x[a-fA-F0-9]{40}$/i.test(v)) return v;
+  }
+  return null;
+}
+
+function rpcForNetwork(key: NetworkKey): string {
+  const net = NETWORKS[key];
+  const byChain = rpcOverrides[String(net.chainId)];
+  const byKey = rpcOverrides[key];
+  const o = (byChain || byKey || "").trim();
+  return o || net.rpcUrl;
+}
+
+function viemChain(key: NetworkKey, rpcUrl: string): Chain {
+  const n = NETWORKS[key];
+  return {
+    id: n.chainId,
+    name: n.name,
+    nativeCurrency: n.nativeCurrency,
+    rpcUrls: { default: { http: [rpcUrl] } },
+  };
+}
+
+async function readNative(
+  client: ReturnType<typeof createPublicClient>,
+  addr: string | null,
+  symbol: string,
+): Promise<string> {
+  if (!addr) return "—";
+  try {
+    const v = await client.getBalance({ address: addr as \`0x\${string}\` });
+    return \`\${formatEther(v)} \${symbol}\`;
+  } catch (e) {
+    const msg = (e instanceof Error ? e.message : String(e))
+      .replace(/\\s+/g, " ")
+      .trim();
+    return \`error (\${msg.slice(0, 48)}\${msg.length > 48 ? "…" : ""})\`;
+  }
+}
+
+async function main() {
+  const deployer = pickAddr("DEPLOYER_ADDRESS");
+  const agent = pickAddr(
+    "AGENT_ADDRESS",
+    "NEXT_PUBLIC_AGENT_ADDRESS",
+    "VITE_AGENT_ADDRESS",
+  );
+
+  const keys = Object.keys(NETWORKS) as NetworkKey[];
+
+  console.log("\\n  Native balances (all chains in network-definitions)\\n");
+  if (!deployer && !agent) {
+    console.log(
+      "  Set DEPLOYER_ADDRESS and/or AGENT_ADDRESS in repo-root .env (see just accounts).\\n",
+    );
+  }
+
+  const rows = await Promise.all(
+    keys.map(async (key) => {
+      const rpcUrl = rpcForNetwork(key);
+      const net = NETWORKS[key];
+      const chain = viemChain(key, rpcUrl);
+      const client = createPublicClient({
+        chain,
+        transport: http(rpcUrl, { timeout: 15_000 }),
+      });
+      const sym = net.nativeCurrency.symbol;
+      const [d, a] = await Promise.all([
+        readNative(client, deployer, sym),
+        readNative(client, agent, sym),
+      ]);
+      return { name: net.name, key, d, a };
+    }),
+  );
+
+  const wName = Math.max(12, ...rows.map((r) => r.name.length));
+  const wKey = Math.max(8, ...rows.map((r) => r.key.length));
+  const wBal = Math.max(10, ...rows.map((r) => Math.max(r.d.length, r.a.length)));
+
+  console.log(
+    \`  \${"Network".padEnd(wName)}  \${"Key".padEnd(wKey)}  \${"Deployer".padEnd(wBal)}  Agent\`,
+  );
+  console.log(
+    \`  \${"-".repeat(wName)}  \${"-".repeat(wKey)}  \${"-".repeat(wBal)}  \${"-".repeat(wBal)}\`,
+  );
+  for (const r of rows) {
+    console.log(
+      \`  \${r.name.padEnd(wName)}  \${r.key.padEnd(wKey)}  \${r.d.padEnd(wBal)}  \${r.a}\`,
+    );
+  }
+  console.log("");
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
+`;
+}
+
+/** On-chain agent registration via Agent0 SDK (runs from repo root with `npx tsx`). */
+export function getRegisterAgentScript(projectName: string): string {
+  const title = JSON.stringify(`${projectName} agent`);
+  const desc = JSON.stringify(
+    `Onchain AI agent scaffolded with ${projectName}. ERC-8004 registration via Agent0.`,
+  );
+  return `/**
+ * Register an ERC-8004 agent on-chain using AGENT_PRIVATE_KEY (pays gas).
+ * Run: just register-agent
+ */
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import "dotenv/config";
+import { getActiveNetwork } from "../network-definitions";
+
+const ROOT = process.cwd();
+const PKG = join(ROOT, "package.json");
+
+function readProjectName(): string {
+  if (!existsSync(PKG)) return ${JSON.stringify(projectName)};
+  try {
+    const j = JSON.parse(readFileSync(PKG, "utf8")) as { name?: string };
+    return typeof j.name === "string" && j.name ? j.name : ${JSON.stringify(projectName)};
+  } catch {
+    return ${JSON.stringify(projectName)};
+  }
+}
+
+async function main() {
+  const pk = (process.env.AGENT_PRIVATE_KEY || "").trim();
+  const agentAddr = (process.env.AGENT_ADDRESS || "").trim();
+  if (!pk) {
+    console.error("Missing AGENT_PRIVATE_KEY (set in .env or .env.secrets.encrypted via with-secrets).");
+    process.exit(1);
+  }
+  const net = getActiveNetwork();
+  const name = readProjectName();
+  const title = ${title};
+  const description = ${desc};
+
+  const { SDK } = await import("agent0-sdk");
+  const sdk = new SDK({
+    chainId: net.chainId,
+    rpcUrl: net.rpcUrl,
+    privateKey: (pk.startsWith("0x") ? pk : "0x" + pk) as \`0x\${string}\`,
+  });
+
+  console.log("Network:", net.name, "chainId:", net.chainId);
+  console.log("RPC:", net.rpcUrl);
+
+  const agent = sdk.createAgent(title, description, "");
+  if (agentAddr && /^0x[a-fA-F0-9]{40}$/i.test(agentAddr)) {
+    agent.setWallet(agentAddr as \`0x\${string}\`);
+    console.log("Operational wallet set to AGENT_ADDRESS:", agentAddr);
+  }
+  agent.setActive(true);
+
+  console.log("Submitting registerOnChain()…");
+  const tx = await agent.registerOnChain();
+  console.log("Tx submitted:", (tx as { txHash?: string }).txHash ?? tx);
+  await tx.waitConfirmed({ timeoutMs: 300_000 });
+  console.log("Confirmed.");
+  const id = (agent as { agentId?: string }).agentId;
+  if (id !== undefined && id !== null) console.log("Agent ID:", id);
 }
 
 main().catch((e) => {

@@ -10,12 +10,35 @@ import type {
 import {
   getDeployFoundryScript,
   getDeployHardhatScript,
+  getDeployNetworksModuleScript,
   getFundDeployerScript,
   getGenerateDeployerScript,
   getList1clawIdsScript,
+  getRegisterAgentScript,
+  getSecretAddScript,
+  getShowAccountsScript,
+  getShowBalancesAllChainsScript,
   getSecretsCryptoScript,
+  getVerifyFoundryScript,
+  getVerifyHardhatScript,
   getWithSecretsScript,
 } from "./project-scripts.js";
+import { balancesPageSource } from "../scaffold-templates/balances-page.js";
+import { identityPageSource } from "../scaffold-templates/identity-page.js";
+import {
+  networkDefinitionsSource,
+  nextNetworksReexportSource,
+  scaffoldConfigSource,
+  viteNetworksReexportSource,
+} from "../scaffold-templates/network-config.js";
+import { viemChainHelperSource } from "../scaffold-templates/viem-chain.js";
+import {
+  burnerAutoConnectSource,
+  connectWalletButtonSource,
+  nextAppProvidersSource,
+  wagmiConfigSource,
+  web3ProvidersSource,
+} from "../scaffold-templates/wallet-context.js";
 
 function dir(base: string, ...segments: string[]) {
   const p = join(base, ...segments);
@@ -146,6 +169,11 @@ function writeRootFiles(root: string, config: ScaffoldConfig) {
     viem: "^2.21.0",
     "qrcode-terminal": "^0.12.0",
   };
+  if (config.framework === "nextjs" || config.framework === "vite") {
+    rootDevDeps["agent0-sdk"] = "^1.7.1";
+    rootDevDeps["tsx"] = "^4.19.0";
+    rootDevDeps["dotenv"] = "^16.4.0";
+  }
 
   const pkg = {
     name: config.projectName,
@@ -158,6 +186,12 @@ function writeRootFiles(root: string, config: ScaffoldConfig) {
   };
 
   file(root, "package.json", JSON.stringify(pkg, null, 2) + "\n");
+
+  if (config.framework === "nextjs" || config.framework === "vite") {
+    file(root, "scaffold.config.ts", scaffoldConfigSource(config.chain));
+    file(root, "network-definitions.ts", networkDefinitionsSource());
+    file(root, "viem-chain.ts", viemChainHelperSource());
+  }
 
   const gitignoreLines = [
     "node_modules/",
@@ -196,17 +230,21 @@ Onchain AI agent monorepo — scaffolded with \`scaffold-agent\`.
 ${config.chain === "foundry" ? "- [Foundry](https://book.getfoundry.sh/getting-started/installation)\n- First `just compile` or `just deploy` runs `forge install` for **forge-std** into `packages/foundry/lib/` (gitignored).\n" : ""}${config.chain === "hardhat" ? "- [Hardhat](https://hardhat.org)\n" : ""}
 ## Quick Start
 
+\`scaffold-agent\` runs **\`npm install\`** in the repo root when you create the project (unless **\`SCAFFOLD_SKIP_NPM_INSTALL=1\`**). Then:
+
 \`\`\`bash
-npm install
-${config.chain !== "none" ? "just chain        # start local blockchain (in a separate terminal)\njust fund         # 100 ETH each: local account #0 → DEPLOYER (+ AGENT if set)\njust deploy       # deploy contracts + generate ABI types\n" : ""}just start        # start the app
+${config.chain !== "none" ? "just chain        # start local blockchain (in a separate terminal)\njust fund         # 100 ETH each: local account #0 → DEPLOYER (+ AGENT if set)\njust deploy       # deploy contracts + generate ABI types (add e.g. \\`base\\` or \\`--network sepolia\\` for public chains)\njust verify       # verify AgentWallet on an explorer (default sepolia; e.g. \\`just verify base\\`)\n" : ""}just start        # start the app
 \`\`\`
-${config.chain !== "none" ? "\n**Local deploy:** **\`just generate\`** tries to auto-fund when the RPC answers. The **scaffold CLI** runs funding **immediately** after creating the project — that only works if **\`just chain\`** (or another node) is **already** on \`http://127.0.0.1:8545\` (or \`RPC_URL\`). Otherwise run **\`just fund\`** after starting the chain, then **\`just deploy\`**. Set **\`SCAFFOLD_SKIP_AUTO_FUND=1\`** to skip. You will be prompted for your secrets password if you use 1Claw / encrypted mode.\n" : ""}${config.chain === "foundry" ? "\n**Foundry:** \`just deploy\` uses **\`DEPLOYER_PRIVATE_KEY\`** from **\`.env.secrets.encrypted\`** (password prompt). Run **\`just generate\`** if missing. **Plain** secrets mode keeps keys in \`.env\` only.\n" : ""}${config.framework === "nextjs" ? "\n**Next.js:** Chat at \`/\`. The **bug icon** in the header opens **\`/debug\`** — deployed addresses and ABI from \`deployedContracts.ts\` (read-only, [Scaffold-ETH 2](https://github.com/scaffold-eth/scaffold-eth-2)–style Debug Contracts). **\`next.config.js\`** loads **repo-root \`.env\`** so \`ONECLAW_VAULT_ID\` and other root vars work when you run \`next dev\` from \`packages/nextjs\`.\n" : ""}
+
+If install was skipped or failed: \`npm install\` from the repo root.
+${config.chain !== "none" ? "\n**Local deploy:** **\`just generate\`** tries to auto-fund when the RPC answers. The **scaffold CLI** runs funding **immediately** after creating the project — that only works if **\`just chain\`** (or another node) is **already** on \`http://127.0.0.1:8545\` (or \`RPC_URL\`). Otherwise run **\`just fund\`** after starting the chain, then **\`just deploy\`**. Set **\`SCAFFOLD_SKIP_AUTO_FUND=1\`** to skip. You will be prompted for your secrets password if you use 1Claw / encrypted mode.\n" : ""}${config.chain === "foundry" ? "\n**Foundry:** \`just deploy\` uses **\`DEPLOYER_PRIVATE_KEY\`**. Public chains: \`just deploy base\`, \`just deploy --network sepolia\`, or \`DEPLOY_NETWORK=base just deploy\`. Set **\`RPC_URL\`** to override default RPCs. **\`just verify\`** submits **\`AgentWallet\`** to the explorer (defaults to sepolia; set **\`ETHERSCAN_API_KEY\`**, **\`BASESCAN_API_KEY\`**, etc.).\n" : ""}${config.chain === "hardhat" ? "\n**Hardhat:** Same deploy/verify patterns as Foundry; networks are defined in \`packages/hardhat/hardhat.config.ts\`.\n" : ""}${config.framework === "nextjs" ? "\n**Next.js:** Chat at \`/\`. **RainbowKit + wagmi + viem**. **Burner Wallet** ([burner-connector](https://github.com/scaffold-eth/burner-connector), [Scaffold-ETH 2](https://github.com/scaffold-eth/scaffold-eth-2)-style): when **\`targetNetwork\`** in **\`scaffold.config.ts\`** is **\`localhost\`**, the connect modal includes Burner (listed first) and the app auto-connects it for local dev; for any other **\`targetNetwork\`** it is omitted. **Reown / WalletConnect:** **\`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID\`** in repo-root **\`.env\`** ([WalletConnect Cloud](https://cloud.walletconnect.com)); **\`just reown <id>\`**. **\`/balances\`**, **\`/identity\`**, **\`/debug\`**. **\`next.config.js\`** loads repo-root **\`.env\`**.\n" : ""}${config.framework === "vite" ? "\n**Vite:** Same **RainbowKit + wagmi + viem** stack; set **\`VITE_WALLETCONNECT_PROJECT_ID\`**. **\`scaffold.config.ts\`** sets the active network. **\`packages/vite/server.ts\`** serves **\`POST /api/agent0/lookup\`** and **\`POST /api/balances\`**.\n" : ""}
 
 ## Commands
 
 | Command | Description |
 |---|---|
-${config.chain !== "none" ? "| \`just chain\` | Start local blockchain |\n| \`just fund\` | Fund \`DEPLOYER_ADDRESS\` + optional \`AGENT_ADDRESS\` (100 ETH each from account #0) |\n| \`just deploy\` | Deploy contracts & auto-generate ABI types |\n" : ""}${config.secrets.mode === "oneclaw" || config.llm === "oneclaw" ? "| \`just list-1claw\` | Print vault IDs + agent UUIDs from API (\`ONECLAW_API_KEY\`) |\n| \`just sync-1claw-env\` | List + write first vault + agent UUID into repo-root \`.env\` |\n" : ""}| \`just start\` | Start the frontend / agent (may prompt for secrets password) |
+${config.chain !== "none" ? "| \`just chain\` | Start local blockchain |\n| \`just fund\` | Fund \`DEPLOYER_ADDRESS\` + optional \`AGENT_ADDRESS\` (100 ETH each from account #0) |\n| \`just deploy\` | Deploy contracts & auto-generate ABI types (optional: \`just deploy base\`, \`just deploy --network sepolia\`) |\n| \`just verify\` | Verify \`AgentWallet\` on an explorer (default network: sepolia; e.g. \`just verify base\`) |\n" : ""}${config.secrets.mode === "oneclaw" || config.llm === "oneclaw" ? "| \`just list-1claw\` | Print vault IDs + agent UUIDs from API (\`ONECLAW_API_KEY\`) |\n| \`just sync-1claw-env\` | List + write first vault + agent UUID into repo-root \`.env\` |\n" : ""}| \`just env KEY VALUE\` | Upsert repo-root \`.env\` (e.g. **Reown** \`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID\`${config.framework === "vite" ? " or \`VITE_WALLETCONNECT_PROJECT_ID\`" : ""}) |\n| \`just enc KEY VALUE\` | Add/update a key in \`.env.secrets.encrypted\` (password prompt) |\n${config.secrets.mode === "oneclaw" || config.llm === "oneclaw" ? "| \`just vault PATH VALUE\` | Store a secret in your **1Claw vault** |\n" : ""}${config.framework === "nextjs" || config.framework === "vite" ? "| \`just reown PROJECT_ID\` | WalletConnect Cloud id → \`.env\` |\n" : ""}${config.framework === "nextjs" || config.framework === "vite" ? "| \`just register-agent\` | Register ERC-8004 agent on-chain (\`AGENT_PRIVATE_KEY\`; uses \`scaffold.config\` network) |\n" : ""}${config.framework === "nextjs" || config.framework === "vite" ? "| \`just balances\` | Native balance on **all** networks in \`network-definitions\` (\`DEPLOYER_ADDRESS\` + agent; \`rpcOverrides\` from \`scaffold.config\`) |\n" : ""}| \`just start\` | Start the frontend / agent (may prompt for secrets password) |
+| \`just accounts\` | QR codes for \`DEPLOYER_ADDRESS\` + agent (\`AGENT_ADDRESS\` / \`NEXT_PUBLIC_AGENT_ADDRESS\`; repo-root \`.env\`) |
 | \`just generate\` | Generate a deployer wallet (password prompt if \`.env.secrets.encrypted\` exists) |
 
 ## Secrets
@@ -265,8 +303,14 @@ function writeJustfile(root: string, config: ScaffoldConfig) {
       "    forge build",
       "",
       "# Deploy contracts and generate ABI types (prompts for secrets password if .env.secrets.encrypted exists)",
-      "deploy network='localhost':",
-      "    node scripts/with-secrets.mjs -- node scripts/deploy-foundry.mjs",
+      "# Examples: just deploy   just deploy base   just deploy --network sepolia",
+      "deploy *ARGS:",
+      "    node scripts/with-secrets.mjs -- node scripts/deploy-foundry.mjs {{ARGS}}",
+      "",
+      "# Verify AgentWallet on a block explorer (set ETHERSCAN_API_KEY / BASESCAN_API_KEY / …)",
+      "# Examples: just verify base   just verify --network sepolia   VERIFY_NETWORK=base just verify",
+      "verify *ARGS:",
+      "    node scripts/with-secrets.mjs -- node scripts/verify-foundry.mjs {{ARGS}}",
       "",
       "# Run contract tests",
       "test:",
@@ -295,10 +339,13 @@ function writeJustfile(root: string, config: ScaffoldConfig) {
       "    cd packages/hardhat && npx hardhat compile",
       "",
       "# Deploy contracts and generate ABI types (prompts for secrets password if .env.secrets.encrypted exists)",
-      "deploy network='localhost':",
-      "    #!/usr/bin/env bash",
-      "    export HARDHAT_NETWORK={{network}}",
-      "    node scripts/with-secrets.mjs -- node scripts/deploy-hardhat.mjs",
+      "# Examples: just deploy   just deploy base   just deploy --network sepolia",
+      "deploy *ARGS:",
+      "    node scripts/with-secrets.mjs -- node scripts/deploy-hardhat.mjs {{ARGS}}",
+      "",
+      "# Verify AgentWallet (set ETHERSCAN_API_KEY / BASESCAN_API_KEY / … in .env)",
+      "verify *ARGS:",
+      "    node scripts/with-secrets.mjs -- node scripts/verify-hardhat.mjs {{ARGS}}",
       "",
       "# Run contract tests",
       "test:",
@@ -344,6 +391,56 @@ function writeJustfile(root: string, config: ScaffoldConfig) {
   }
 
   lines.push(
+    "# Plain repo-root .env (NEXT_PUBLIC_* for WalletConnect / Reown client bundle)",
+    "#   just env MY_KEY my_value   — or: SECRET_VALUE=x just env MY_KEY",
+    "env key value:",
+    "    node scripts/secret-add.mjs env {{key}} {{value}}",
+    "",
+    "# Encrypted .env.secrets.encrypted (password prompt; creates file if missing)",
+    "enc key value:",
+    "    node scripts/secret-add.mjs encrypted {{key}} {{value}}",
+    "",
+  );
+
+  if (config.secrets.mode === "oneclaw" || config.llm === "oneclaw") {
+    lines.push(
+      "# 1Claw vault secret (ONECLAW_VAULT_ID + ONECLAW_API_KEY; recipe runs with-secrets)",
+      "vault path value:",
+      "    node scripts/with-secrets.mjs -- node scripts/secret-add.mjs vault {{path}} {{value}}",
+      "",
+    );
+  }
+
+  if (config.framework === "nextjs") {
+    lines.push(
+      "# Reown / WalletConnect Cloud project id → .env",
+      "reown project_id:",
+      "    node scripts/secret-add.mjs env NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID {{project_id}}",
+      "",
+    );
+  } else if (config.framework === "vite") {
+    lines.push(
+      "# Reown / WalletConnect Cloud project id → .env",
+      "reown project_id:",
+      "    node scripts/secret-add.mjs env VITE_WALLETCONNECT_PROJECT_ID {{project_id}}",
+      "",
+    );
+  }
+
+  if (config.framework === "nextjs" || config.framework === "vite") {
+    lines.push(
+      "# Register ERC-8004 agent on-chain (AGENT_PRIVATE_KEY pays gas; network from scaffold.config)",
+      "register-agent:",
+      "    node scripts/with-secrets.mjs -- npx tsx scripts/register-agent.ts",
+      "",
+    );
+  }
+
+  lines.push(
+    "# Show deployer + agent address QR codes (reads repo-root .env)",
+    "accounts:",
+    "    node scripts/show-accounts.mjs",
+    "",
     "# Generate a deployer wallet (if not already set)",
     "generate:",
     "    node scripts/generate-deployer.mjs",
@@ -360,14 +457,28 @@ function writeScripts(root: string, config: ScaffoldConfig) {
 
   file(scripts, "secrets-crypto.mjs", getSecretsCryptoScript());
   file(scripts, "with-secrets.mjs", getWithSecretsScript());
+  file(scripts, "secret-add.mjs", getSecretAddScript());
+  if (config.chain === "foundry" || config.chain === "hardhat") {
+    file(scripts, "deploy-networks.mjs", getDeployNetworksModuleScript());
+  }
   if (config.secrets.mode === "oneclaw" || config.llm === "oneclaw") {
     file(scripts, "list-1claw-ids.mjs", getList1clawIdsScript());
   }
   if (config.chain === "foundry") {
     file(scripts, "deploy-foundry.mjs", getDeployFoundryScript());
+    file(scripts, "verify-foundry.mjs", getVerifyFoundryScript());
   }
   if (config.chain === "hardhat") {
     file(scripts, "deploy-hardhat.mjs", getDeployHardhatScript());
+    file(scripts, "verify-hardhat.mjs", getVerifyHardhatScript());
+  }
+  if (config.framework === "nextjs" || config.framework === "vite") {
+    file(
+      scripts,
+      "register-agent.ts",
+      getRegisterAgentScript(config.projectName),
+    );
+    file(scripts, "show-balances-all-chains.ts", getShowBalancesAllChainsScript());
   }
 
   // ── generate-abi-types.mjs ──────────────────────────────────────────────
@@ -515,6 +626,7 @@ if (!written) {
   file(scripts, "generate-abi-types.mjs", abiScript);
 
   file(scripts, "generate-deployer.mjs", getGenerateDeployerScript());
+  file(scripts, "show-accounts.mjs", getShowAccountsScript());
 
   // ── fund-deployer.mjs (local account #0 → DEPLOYER + optional AGENT) ─
   if (config.chain !== "none") {
@@ -688,6 +800,8 @@ import "@nomicfoundation/hardhat-toolbox";
 import "hardhat-deploy";
 import "dotenv/config";
 
+const rpc = (u: string) => (process.env.RPC_URL?.trim() ? process.env.RPC_URL.trim() : u);
+
 const config: HardhatUserConfig = {
   solidity: "0.8.24",
   defaultNetwork: "localhost",
@@ -696,6 +810,50 @@ const config: HardhatUserConfig = {
   },
   networks: {
     localhost: { url: "http://127.0.0.1:8545" },
+    sepolia: { url: rpc("https://rpc.sepolia.org") },
+    base: { url: rpc("https://mainnet.base.org") },
+    baseSepolia: { url: rpc("https://sepolia.base.org") },
+    mainnet: { url: rpc("https://eth.llamarpc.com") },
+    polygon: { url: rpc("https://polygon-rpc.com") },
+    bnb: { url: rpc("https://bsc-dataseed.binance.org") },
+  },
+  etherscan: {
+    apiKey: {
+      mainnet: process.env.ETHERSCAN_API_KEY || "",
+      sepolia: process.env.ETHERSCAN_API_KEY || "",
+      base: process.env.BASESCAN_API_KEY || process.env.ETHERSCAN_API_KEY || "",
+      baseSepolia:
+        process.env.BASESCAN_API_KEY || process.env.ETHERSCAN_API_KEY || "",
+      polygon: process.env.POLYGONSCAN_API_KEY || "",
+      bsc: process.env.BSCSCAN_API_KEY || "",
+      bnb: process.env.BSCSCAN_API_KEY || "",
+    },
+    customChains: [
+      {
+        network: "base",
+        chainId: 8453,
+        urls: {
+          apiURL: "https://api.basescan.org/api",
+          browserURL: "https://basescan.org",
+        },
+      },
+      {
+        network: "baseSepolia",
+        chainId: 84532,
+        urls: {
+          apiURL: "https://api-sepolia.basescan.org/api",
+          browserURL: "https://sepolia.basescan.org",
+        },
+      },
+      {
+        network: "bnb",
+        chainId: 56,
+        urls: {
+          apiURL: "https://api.bscscan.com/api",
+          browserURL: "https://bscscan.com",
+        },
+      },
+    ],
   },
 };
 
@@ -908,6 +1066,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground shadow hover:bg-primary/90",
+        secondary: "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80",
         outline: "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
         ghost: "hover:bg-accent hover:text-accent-foreground",
       },
@@ -978,40 +1137,518 @@ const COMPONENTS_JSON = JSON.stringify(
   2,
 );
 
+/** Express routes: Agent0 lookup + balances (uses repo-root network config). */
+function viteAgent0AndBalancesExpressBlock(): string {
+  return `
+app.post("/api/agent0/lookup", async (req, res) => {
+  try {
+    const { address, chainId, addresses: rawAddrs } = req.body ?? {};
+    const cid = Number(chainId);
+    if (!Number.isFinite(cid)) {
+      res.status(400).json({ error: "Invalid chainId" });
+      return;
+    }
+    const net = getActiveNetwork();
+    if (cid !== net.chainId) {
+      res.status(400).json({
+        error: "chainId does not match active network in scaffold.config",
+      });
+      return;
+    }
+    const single = address;
+    const candidates = [];
+    if (Array.isArray(rawAddrs)) {
+      for (const x of rawAddrs) {
+        if (typeof x === "string" && /^0x[a-fA-F0-9]{40}$/i.test(x)) candidates.push(x);
+      }
+    }
+    if (typeof single === "string" && /^0x[a-fA-F0-9]{40}$/i.test(single)) {
+      candidates.push(single);
+    }
+    if (candidates.length === 0) {
+      res.status(400).json({
+        error: "Provide address or addresses[] (ERC-8004 owner wallets to search)",
+      });
+      return;
+    }
+    const seen = new Set();
+    const owners = [];
+    for (const a of candidates) {
+      const k = a.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      owners.push(a);
+    }
+    const { SDK } = await import("agent0-sdk");
+    const sdk = new SDK({
+      chainId: net.chainId,
+      rpcUrl: net.rpcUrl,
+    });
+    const agents = await sdk.searchAgents({
+      owners,
+      chains: [cid],
+    });
+    res.json({ agents });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[api/agent0/lookup]", msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.post("/api/balances", async (req, res) => {
+  try {
+    const { address: addr, chainId } = req.body ?? {};
+    const cid = Number(chainId);
+    if (typeof addr !== "string" || !/^0x[a-fA-F0-9]{40}$/i.test(addr)) {
+      res.status(400).json({ error: "Invalid address" });
+      return;
+    }
+    if (!Number.isFinite(cid)) {
+      res.status(400).json({ error: "Invalid chainId" });
+      return;
+    }
+    const net = getActiveNetwork();
+    if (cid !== net.chainId) {
+      res.status(400).json({
+        error: "chainId does not match active network in scaffold.config",
+      });
+      return;
+    }
+    const chain = viemChainForNetwork(net);
+    const client = createPublicClient({
+      chain,
+      transport: http(net.rpcUrl),
+    });
+    const wei = await client.getBalance({ address: addr });
+    const nativeFormatted = formatUnits(wei, net.nativeCurrency.decimals);
+    const contracts = net.tokens.map((t) => ({
+      address: t.address,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [addr],
+    }));
+    const tokens = [];
+    if (contracts.length) {
+      const results = await client.multicall({ contracts, allowFailure: true });
+      results.forEach((r, i) => {
+        const t = net.tokens[i];
+        if (r.status === "success") {
+          tokens.push({
+            symbol: t.symbol,
+            balance: formatUnits(r.result, t.decimals),
+            decimals: t.decimals,
+            address: t.address,
+          });
+        } else {
+          tokens.push({
+            symbol: t.symbol,
+            balance: "0",
+            decimals: t.decimals,
+            address: t.address,
+          });
+        }
+      });
+    }
+    res.json({
+      native: {
+        symbol: net.nativeCurrency.symbol,
+        balance: nativeFormatted,
+        decimals: net.nativeCurrency.decimals,
+      },
+      tokens,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[api/balances]", msg);
+    res.status(500).json({ error: msg });
+  }
+});
+`;
+}
+
+function nextApiAgent0LookupRoute(): string {
+  return `import { SDK } from "agent0-sdk";
+import { getActiveNetwork } from "@/lib/networks";
+
+function normalizeOwnerAddresses(body: unknown): string[] | null {
+  const o = body as Record<string, unknown>;
+  const arr = o?.addresses;
+  const single = o?.address;
+  const candidates: string[] = [];
+  if (Array.isArray(arr)) {
+    for (const x of arr) {
+      if (typeof x === "string" && /^0x[a-fA-F0-9]{40}$/i.test(x)) candidates.push(x);
+    }
+  }
+  if (typeof single === "string" && /^0x[a-fA-F0-9]{40}$/i.test(single)) {
+    candidates.push(single);
+  }
+  if (candidates.length === 0) return null;
+  const seen = new Set<string>();
+  const owners: string[] = [];
+  for (const a of candidates) {
+    const k = a.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    owners.push(a);
+  }
+  return owners;
+}
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const chainId = body?.chainId;
+    const owners = normalizeOwnerAddresses(body);
+    if (!owners) {
+      return Response.json(
+        { error: "Provide address (0x…) or addresses: […] (ERC-8004 owner wallets to search)" },
+        { status: 400 },
+      );
+    }
+    const cid = Number(chainId);
+    if (!Number.isFinite(cid)) {
+      return Response.json({ error: "Invalid chainId" }, { status: 400 });
+    }
+    const net = getActiveNetwork();
+    if (cid !== net.chainId) {
+      return Response.json(
+        { error: "chainId does not match active network in scaffold.config" },
+        { status: 400 },
+      );
+    }
+    const sdk = new SDK({
+      chainId: net.chainId,
+      rpcUrl: net.rpcUrl,
+    });
+    const agents = await sdk.searchAgents({
+      owners,
+      chains: [cid],
+    });
+    return Response.json({ agents });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[api/agent0/lookup]", msg);
+    return Response.json({ error: msg }, { status: 500 });
+  }
+}
+`;
+}
+
+function nextApiBalancesRoute(): string {
+  return `import {
+  createPublicClient,
+  http,
+  formatUnits,
+  erc20Abi,
+} from "viem";
+import { getActiveNetwork } from "@/lib/networks";
+import { viemChainForNetwork } from "@repo/viem-chain";
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const addr = body?.address;
+    const chainId = Number(body?.chainId);
+    if (typeof addr !== "string" || !/^0x[a-fA-F0-9]{40}$/i.test(addr)) {
+      return Response.json({ error: "Invalid address" }, { status: 400 });
+    }
+    if (!Number.isFinite(chainId)) {
+      return Response.json({ error: "Invalid chainId" }, { status: 400 });
+    }
+    const net = getActiveNetwork();
+    if (net.chainId !== chainId) {
+      return Response.json(
+        { error: "chainId does not match active network in scaffold.config" },
+        { status: 400 },
+      );
+    }
+    const chain = viemChainForNetwork(net);
+    const client = createPublicClient({
+      chain,
+      transport: http(net.rpcUrl),
+    });
+    const wei = await client.getBalance({ address: addr as \`0x\${string}\` });
+    const nativeFormatted = formatUnits(wei, net.nativeCurrency.decimals);
+    const contracts = net.tokens.map((t) => ({
+      address: t.address,
+      abi: erc20Abi,
+      functionName: "balanceOf" as const,
+      args: [addr as \`0x\${string}\`],
+    }));
+    const tokens: {
+      symbol: string;
+      balance: string;
+      decimals: number;
+      address: string;
+    }[] = [];
+    if (contracts.length) {
+      const results = await client.multicall({ contracts, allowFailure: true });
+      results.forEach((r, i) => {
+        const t = net.tokens[i];
+        if (r.status === "success") {
+          tokens.push({
+            symbol: t.symbol,
+            balance: formatUnits(r.result as bigint, t.decimals),
+            decimals: t.decimals,
+            address: t.address,
+          });
+        } else {
+          tokens.push({
+            symbol: t.symbol,
+            balance: "0",
+            decimals: t.decimals,
+            address: t.address,
+          });
+        }
+      });
+    }
+    return Response.json({
+      native: {
+        symbol: net.nativeCurrency.symbol,
+        balance: nativeFormatted,
+        decimals: net.nativeCurrency.decimals,
+      },
+      tokens,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[api/balances]", msg);
+    return Response.json({ error: msg }, { status: 500 });
+  }
+}
+`;
+}
+
+function nextApiFaucetRoute(): string {
+  return `import { createWalletClient, http, parseEther, defineChain } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { hardhat } from "viem/chains";
+import { getActiveNetwork, targetNetwork } from "@/lib/networks";
+
+/** Anvil / Hardhat node default account #0 (public dev key). */
+const LOCAL_DEV_ACCT0_PK =
+  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as const;
+
+const FAUCET_AMOUNT_ETH = "10";
+
+export async function POST(req: Request) {
+  try {
+    if (targetNetwork !== "localhost") {
+      return Response.json(
+        { error: "Faucet is only enabled when targetNetwork is localhost in scaffold.config.ts" },
+        { status: 403 },
+      );
+    }
+
+    const net = getActiveNetwork();
+    if (net.chainId !== hardhat.id) {
+      return Response.json({ error: "Active network is not local chain 31337" }, { status: 403 });
+    }
+
+    const body = await req.json();
+    const addr = body?.address;
+    const chainId = Number(body?.chainId);
+
+    if (typeof addr !== "string" || !/^0x[a-fA-F0-9]{40}$/i.test(addr)) {
+      return Response.json({ error: "Invalid address" }, { status: 400 });
+    }
+    if (!Number.isFinite(chainId) || chainId !== hardhat.id) {
+      return Response.json(
+        { error: "chainId must be 31337 (local Hardhat / Anvil)" },
+        { status: 400 },
+      );
+    }
+
+    const chain = defineChain({
+      id: net.chainId,
+      name: net.name,
+      nativeCurrency: net.nativeCurrency,
+      rpcUrls: { default: { http: [net.rpcUrl] } },
+    });
+
+    const account = privateKeyToAccount(LOCAL_DEV_ACCT0_PK);
+    const client = createWalletClient({
+      account,
+      chain,
+      transport: http(net.rpcUrl),
+    });
+
+    const hash = await client.sendTransaction({
+      to: addr as \`0x\${string}\`,
+      value: parseEther(FAUCET_AMOUNT_ETH),
+    });
+
+    return Response.json({
+      ok: true,
+      hash,
+      amount: FAUCET_AMOUNT_ETH,
+      symbol: net.nativeCurrency.symbol,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[api/faucet]", msg);
+    return Response.json({ error: msg }, { status: 500 });
+  }
+}
+`;
+}
+
+function localFaucetButtonSource(): string {
+  return `"use client";
+
+import { useState } from "react";
+import { Droplets, Loader2 } from "lucide-react";
+import { useAccount, useChainId } from "wagmi";
+import { hardhat } from "wagmi/chains";
+import { cn } from "@/lib/utils";
+import { targetNetwork } from "@/lib/networks";
+
+/**
+ * Localhost-only: send ETH from Anvil account #0 via POST /api/faucet (same dev key as just fund).
+ */
+export function LocalFaucetButton() {
+  if (targetNetwork !== "localhost") return null;
+
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+  const [busy, setBusy] = useState(false);
+
+  const wrongChain = isConnected && chainId !== hardhat.id;
+  const disabled = !isConnected || !address || wrongChain || busy;
+
+  async function onFaucet() {
+    if (!address || disabled) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/faucet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address, chainId: hardhat.id }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string; amount?: string; symbol?: string };
+      if (!res.ok) {
+        throw new Error(data.error || res.statusText);
+      }
+      const amt = data.amount ?? "?";
+      const sym = data.symbol ?? "ETH";
+      const el = document.activeElement as HTMLElement | null;
+      el?.blur();
+      window.alert("Sent " + amt + " " + sym + " to your wallet (local faucet).");
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const title = wrongChain
+    ? "Switch your wallet to Localhost (chain 31337)"
+    : !isConnected
+      ? "Connect a wallet first"
+      : "Mint 10 test ETH from local Anvil account #0";
+
+  return (
+    <button
+      type="button"
+      onClick={() => void onFaucet()}
+      disabled={disabled}
+      title={title}
+      className={cn(
+        "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md",
+        "text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors",
+        "disabled:pointer-events-none disabled:opacity-40",
+      )}
+      aria-label="Local faucet"
+    >
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Droplets className="h-4 w-4" />}
+    </button>
+  );
+}
+`;
+}
+
 function chatPageContent(
   projectName: string,
-  options?: { debugLink?: boolean },
+  options?: {
+    debugLink?: boolean;
+    identityLink?: boolean;
+    linkFramework?: "next" | "react-router";
+  },
 ): string {
-  const debugLink = options?.debugLink !== false;
-  const linkImports = debugLink
-    ? `import Link from "next/link";
-`
+  const linkFramework = options?.linkFramework ?? "next";
+  const debugLink =
+    options?.debugLink !== undefined
+      ? options.debugLink
+      : linkFramework === "next";
+  const identityLink = options?.identityLink !== false;
+  const needLink = identityLink || debugLink;
+  const linkImports = !needLink
+    ? ""
+    : linkFramework === "next"
+      ? `import Link from "next/link";\n`
+      : `import { Link } from "react-router-dom";\n`;
+  const cnImport = needLink ? `import { cn } from "@/lib/utils";\n` : "";
+  const lucideParts = ["SendHorizontal", "Bot", "User"];
+  if (identityLink) lucideParts.push("Info", "Wallet");
+  if (debugLink) lucideParts.push("Bug");
+  const lucideIcons = `import { ${lucideParts.join(", ")} } from "lucide-react";`;
+  const lp = (path: string) =>
+    linkFramework === "next" ? `href="${path}"` : `to="${path}"`;
+  const iconBtnClass = `cn(
+            "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md",
+            "text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors",
+          )`;
+  const localFaucetImport = identityLink
+    ? `import { LocalFaucetButton } from "@/components/LocalFaucetButton";\n`
     : "";
-  const cnImport = debugLink
-    ? `import { cn } from "@/lib/utils";
-`
+  const headerFaucet = identityLink
+    ? `
+        <LocalFaucetButton />`
     : "";
-  const lucideIcons = debugLink
-    ? `import { SendHorizontal, Bot, User, Bug } from "lucide-react";`
-    : `import { SendHorizontal, Bot, User } from "lucide-react";`;
+  const headerBalances = identityLink
+    ? `
+        <Link
+          ${lp("/balances")}
+          className={${iconBtnClass}}
+          title="Balances"
+        >
+          <Wallet className="h-4 w-4" />
+        </Link>`
+    : "";
+  const headerIdentity = identityLink
+    ? `
+        <Link
+          ${lp("/identity")}
+          className={${iconBtnClass}}
+          title="Agent identity (ERC-8004)"
+        >
+          <Info className="h-4 w-4" />
+        </Link>`
+    : "";
   const headerBug = debugLink
     ? `
         <Link
-          href="/debug"
-          className={cn(
-            "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md",
-            "text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors",
-          )}
+          ${lp("/debug")}
+          className={${iconBtnClass}}
           title="Debug contracts"
         >
           <Bug className="h-4 w-4" />
         </Link>`
     : "";
+  const headerIcons = `${headerFaucet}${headerBalances}${headerIdentity}${headerBug}`;
+  const headerRight = `
+        <div className="flex items-center gap-2 shrink-0">
+          ${headerIcons ? `<div className="flex items-center gap-1">${headerIcons}</div>` : ""}
+          <ConnectWalletButton />
+        </div>`;
 
   return `"use client";
 
-${linkImports}import { useChat } from "ai/react";
+${linkImports}${localFaucetImport}import { useChat } from "ai/react";
 import { useEffect, useRef } from "react";
+import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 ${cnImport}${lucideIcons}
@@ -1038,7 +1675,7 @@ export default function Home() {
         <div className="min-w-0 flex-1">
           <h1 className="text-sm font-semibold">${projectName}</h1>
           <p className="text-xs text-muted-foreground">Onchain AI Agent</p>
-        </div>${headerBug}
+        </div>${headerRight}
       </header>
 
       {error && (
@@ -1144,7 +1781,8 @@ function debugPageContent(): string {
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, Bug, Copy, Check } from "lucide-react";
+import { ArrowLeft, Bug, Copy, Check, Fingerprint } from "lucide-react";
+import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 import deployedContracts from "@/contracts/deployedContracts";
 
 type AbiItem = {
@@ -1250,13 +1888,21 @@ export default function DebugPage() {
         <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
           <Bug className="h-4 w-4 text-muted-foreground" />
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="text-sm font-semibold">Debug contracts</h1>
           <p className="text-xs text-muted-foreground">
             Deployed addresses &amp; ABI from{" "}
             <code className="text-xs bg-muted px-1 rounded">deployedContracts.ts</code>
           </p>
         </div>
+        <Link
+          href="/identity"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md hover:bg-accent text-muted-foreground"
+          title="Agent identity (ERC-8004)"
+        >
+          <Fingerprint className="h-4 w-4" />
+        </Link>
+        <ConnectWalletButton />
       </header>
 
       <main className="flex-1 p-6 max-w-3xl mx-auto w-full space-y-8">
@@ -1296,7 +1942,7 @@ export default function DebugPage() {
           >
             Scaffold-ETH 2
           </a>
-          . This page is read-only; add wagmi/viem + wallet to call functions like the SE-2 Debug tab.
+          . This page is read-only; use RainbowKit/wagmi hooks to send txs like the SE-2 Debug tab.
         </p>
       </main>
     </div>
@@ -1646,7 +2292,7 @@ export async function POST(req: Request) {
 }
 
 function nextApiRouteVaultThirdParty(llm: ThirdPartyLlm): string {
-  return `import { convertToCoreMessages, streamText } from "ai";
+  return `import { convertToCoreMessages, streamText, type Message } from "ai";
 ${llmFactoryImport(llm)}
 import { createClient } from "@1claw/sdk";
 
@@ -1690,10 +2336,10 @@ async function getLlmKey(): Promise<string> {
 }
 
 export async function POST(req: Request) {
-  let messages: unknown[];
+  let messages: Message[];
   try {
     const body = await req.json();
-    messages = body.messages;
+    messages = body.messages as Message[];
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: "Missing messages" }), {
         status: 400,
@@ -1735,14 +2381,14 @@ export async function POST(req: Request) {
 }
 
 function nextApiRouteDirectThirdParty(llm: ThirdPartyLlm): string {
-  return `import { convertToCoreMessages, streamText } from "ai";
+  return `import { convertToCoreMessages, streamText, type Message } from "ai";
 ${llmModelImport(llm)}
 
 export async function POST(req: Request) {
-  let messages: unknown[];
+  let messages: Message[];
   try {
     const body = await req.json();
-    messages = body.messages;
+    messages = body.messages as Message[];
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: "Missing messages" }), {
         status: 400,
@@ -1794,7 +2440,11 @@ function nextApiRoute(
 function scaffoldNextJS(root: string, config: ScaffoldConfig) {
   const pkg = dir(root, "packages", "nextjs");
   dir(pkg, "app", "api", "chat");
+  dir(pkg, "app", "api", "agent0", "lookup");
+  dir(pkg, "app", "api", "balances");
   dir(pkg, "app", "debug");
+  dir(pkg, "app", "identity");
+  dir(pkg, "app", "balances");
   dir(pkg, "components", "ui");
   dir(pkg, "lib");
   dir(pkg, "contracts");
@@ -1810,6 +2460,12 @@ function scaffoldNextJS(root: string, config: ScaffoldConfig) {
     clsx: "^2.1.0",
     "tailwind-merge": "^2.5.0",
     "lucide-react": "^0.460.0",
+    "agent0-sdk": "^1.7.1",
+    viem: "^2.21.0",
+    wagmi: "^2.14.0",
+    "@tanstack/react-query": "^5.62.0",
+    "@rainbow-me/rainbowkit": "^2.2.0",
+    "burner-connector": "^0.0.20",
   };
 
   if (config.llm === "oneclaw" || config.secrets.mode === "oneclaw") {
@@ -1859,10 +2515,69 @@ const projectRoot = path.join(__dirname, "..", "..");
 // Load repo-root .env (ONECLAW_VAULT_ID, RPC_URL, …). Next only auto-loads env from packages/nextjs/ otherwise.
 loadEnvConfig(projectRoot);
 
+const nodeBuiltinStub = path.join(__dirname, "lib", "node-builtins-browser-stub.cjs");
+// RainbowKit / wagmi → MetaMask SDK + WalletConnect pull optional deps that break the Next browser bundle.
+const stubAsyncStorage = path.join(__dirname, "lib", "stub-async-storage.cjs");
+const stubPinoPretty = path.join(__dirname, "lib", "stub-pino-pretty.cjs");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Silence "multiple lockfiles" / wrong workspace root when developing inside a nested monorepo.
   outputFileTracingRoot: projectRoot,
+  // Hide the Next.js dev indicator / dev tools entry in the browser (build & runtime errors still show).
+  devIndicators: false,
+  transpilePackages: [
+    "agent0-sdk",
+    "@rainbow-me/rainbowkit",
+    "wagmi",
+    "@tanstack/react-query",
+  ],
+  // agent0-sdk references Node builtins (e.g. fs) for IPFS; browser registration uses wallet + on-chain paths only.
+  webpack: (config, { isServer, webpack: webpackApi }) => {
+    // MetaMask SDK + WalletConnect: optional deps break resolution from hoisted node_modules — replace at resolve time.
+    config.plugins.push(
+      new webpackApi.NormalModuleReplacementPlugin(
+        /^@react-native-async-storage\/async-storage$/,
+        stubAsyncStorage,
+      ),
+      new webpackApi.NormalModuleReplacementPlugin(/^pino-pretty$/, stubPinoPretty),
+    );
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+        dns: false,
+        child_process: false,
+        path: false,
+      };
+    }
+    const prevAlias = config.resolve.alias;
+    const nextAlias =
+      prevAlias && typeof prevAlias === "object" && !Array.isArray(prevAlias)
+        ? { ...prevAlias }
+        : {};
+    nextAlias["@react-native-async-storage/async-storage"] = stubAsyncStorage;
+    nextAlias["@react-native-async-storage/async-storage$"] = stubAsyncStorage;
+    nextAlias["pino-pretty"] = stubPinoPretty;
+    nextAlias["pino-pretty$"] = stubPinoPretty;
+    config.resolve.alias = nextAlias;
+    return config;
+  },
+  // next dev --turbo: paths relative to this package (packages/nextjs)
+  turbopack: {
+    resolveAlias: {
+      fs: nodeBuiltinStub,
+      net: nodeBuiltinStub,
+      tls: nodeBuiltinStub,
+      dns: nodeBuiltinStub,
+      child_process: nodeBuiltinStub,
+      path: nodeBuiltinStub,
+      "@react-native-async-storage/async-storage": "./lib/stub-async-storage.cjs",
+      "pino-pretty": "./lib/stub-pino-pretty.cjs",
+    },
+  },
   async redirects() {
     return [
       {
@@ -1897,9 +2612,20 @@ module.exports = nextConfig;
           jsx: "preserve",
           incremental: true,
           plugins: [{ name: "next" }],
-          paths: { "@/*": ["./*"] },
+          paths: {
+            "@/*": ["./*"],
+            "@repo/*": ["../../*"],
+          },
         },
-        include: ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+        include: [
+          "next-env.d.ts",
+          "**/*.ts",
+          "**/*.tsx",
+          ".next/types/**/*.ts",
+          "../../network-definitions.ts",
+          "../../scaffold.config.ts",
+          "../../viem-chain.ts",
+        ],
         exclude: ["node_modules"],
       },
       null,
@@ -1911,6 +2637,57 @@ module.exports = nextConfig;
   file(pkg, "postcss.config.mjs", POSTCSS_CONFIG);
   file(pkg, "components.json", COMPONENTS_JSON);
   file(pkg, "lib/utils.ts", UTILS_TS);
+  file(pkg, "lib/networks.ts", nextNetworksReexportSource());
+  file(pkg, "lib/burner-auto-connect.tsx", burnerAutoConnectSource());
+  file(pkg, "lib/wagmi-config.ts", wagmiConfigSource(config.projectName, "next"));
+  file(pkg, "lib/web3-providers.tsx", web3ProvidersSource("next"));
+  file(pkg, "components/ConnectWalletButton.tsx", connectWalletButtonSource());
+  file(pkg, "components/LocalFaucetButton.tsx", localFaucetButtonSource());
+  file(
+    pkg,
+    "lib/node-builtins-browser-stub.cjs",
+    `// Stubs Node core modules in the browser bundle (agent0-sdk pulls optional IPFS paths).
+module.exports = {};
+`,
+  );
+  file(
+    pkg,
+    "lib/stub-async-storage.cjs",
+    `// MetaMask SDK references RN async-storage; web bundle uses this in-memory stub (see next.config.js).
+const mem = new Map();
+const api = {
+  getItem: async (k) => (mem.has(String(k)) ? mem.get(String(k)) : null),
+  setItem: async (k, v) => {
+    mem.set(String(k), String(v));
+  },
+  removeItem: async (k) => {
+    mem.delete(String(k));
+  },
+  clear: async () => {
+    mem.clear();
+  },
+  getAllKeys: async () => [...mem.keys()],
+  multiGet: async (keys) => keys.map((k) => [k, mem.get(String(k)) ?? null]),
+  multiSet: async (pairs) => {
+    for (const [k, v] of pairs) mem.set(String(k), String(v));
+  },
+  multiRemove: async (keys) => {
+    for (const k of keys) mem.delete(String(k));
+  },
+};
+module.exports = api;
+module.exports.default = api;
+`,
+  );
+  file(
+    pkg,
+    "lib/stub-pino-pretty.cjs",
+    `// Optional pino transport used by WalletConnect logger in dev; not needed in the browser bundle.
+module.exports = function stubPinoPretty() {
+  return {};
+};
+`,
+  );
   file(pkg, "components/ui/button.tsx", BUTTON_TSX);
   file(pkg, "components/ui/input.tsx", INPUT_TSX);
 
@@ -1920,11 +2697,14 @@ module.exports = nextConfig;
     SHADCN_CSS,
   );
 
+  file(pkg, "app/providers.tsx", nextAppProvidersSource());
+
   file(
     pkg,
     "app/layout.tsx",
     `import type { Metadata } from "next";
 import "./globals.css";
+import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "${config.projectName}",
@@ -1935,7 +2715,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }
@@ -1954,6 +2736,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   file(pkg, "app/page.tsx", chatPageContent(config.projectName));
   file(pkg, "app/debug/page.tsx", debugPageContent());
+  file(
+    pkg,
+    "app/identity/page.tsx",
+    identityPageSource(config.projectName, "next"),
+  );
+  file(pkg, "app/balances/page.tsx", balancesPageSource("next"));
+  file(pkg, "app/api/agent0/lookup/route.ts", nextApiAgent0LookupRoute());
+  file(pkg, "app/api/balances/route.ts", nextApiBalancesRoute());
+  file(pkg, "app/api/faucet/route.ts", nextApiFaucetRoute());
   file(
     pkg,
     "app/api/chat/route.ts",
@@ -1995,6 +2786,9 @@ import {
   type CoreMessage,
 } from "ai";
 import "dotenv/config";
+import { createPublicClient, http, formatUnits, erc20Abi } from "viem";
+import { getActiveNetwork } from "../../network-definitions.js";
+import { viemChainForNetwork } from "../../viem-chain.js";
 
 const shroudBaseURL =
   process.env.SHROUD_BASE_URL || "https://shroud.1claw.xyz/v1";
@@ -2289,7 +3083,7 @@ app.post("/api/chat", async (req, res) => {
     },
   });
 });
-
+${viteAgent0AndBalancesExpressBlock()}
 app.listen(3001, () => console.log("API server on http://localhost:3001"));
 `;
 }
@@ -2300,6 +3094,9 @@ import { convertToCoreMessages, streamText } from "ai";
 ${llmFactoryImport(llm)}
 import { createClient } from "@1claw/sdk";
 import "dotenv/config";
+import { createPublicClient, http, formatUnits, erc20Abi } from "viem";
+import { getActiveNetwork } from "../../network-definitions.js";
+import { viemChainForNetwork } from "../../viem-chain.js";
 
 const client = createClient({
   baseUrl: "https://api.1claw.xyz",
@@ -2372,7 +3169,7 @@ app.post("/api/chat", async (req, res) => {
 
   result.pipeDataStreamToResponse(res);
 });
-
+${viteAgent0AndBalancesExpressBlock()}
 app.listen(3001, () => console.log("API server on http://localhost:3001"));
 `;
 }
@@ -2383,6 +3180,9 @@ function viteApiRouteDirectThirdParty(llm: ThirdPartyLlm): string {
 import { convertToCoreMessages, streamText } from "ai";
 ${llmModelImport(llm)}
 import "dotenv/config";
+import { createPublicClient, http, formatUnits, erc20Abi } from "viem";
+import { getActiveNetwork } from "../../network-definitions.js";
+import { viemChainForNetwork } from "../../viem-chain.js";
 
 const app = express();
 app.use(express.json());
@@ -2406,7 +3206,7 @@ app.post("/api/chat", async (req, res) => {
 
   result.pipeDataStreamToResponse(res);
 });
-
+${viteAgent0AndBalancesExpressBlock()}
 app.listen(3001, () => console.log("API server on http://localhost:3001${envKey ? ` (needs ${envKey})` : ""}"));
 `;
 }
@@ -2439,12 +3239,19 @@ function scaffoldVite(root: string, config: ScaffoldConfig) {
   const deps: Record<string, string> = {
     react: "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-router-dom": "^7.0.0",
     ai: "^4.0.0",
     [llmSdkPackage(config.llm)]: "^1.0.0",
     "class-variance-authority": "^0.7.0",
     clsx: "^2.1.0",
     "tailwind-merge": "^2.5.0",
     "lucide-react": "^0.460.0",
+    "agent0-sdk": "^1.7.1",
+    viem: "^2.21.0",
+    wagmi: "^2.14.0",
+    "@tanstack/react-query": "^5.62.0",
+    "@rainbow-me/rainbowkit": "^2.2.0",
+    "burner-connector": "^0.0.20",
   };
 
   if (config.llm === "oneclaw" || config.secrets.mode === "oneclaw") {
@@ -2464,7 +3271,7 @@ function scaffoldVite(root: string, config: ScaffoldConfig) {
         private: true,
         type: "module",
         scripts: {
-          dev: 'concurrently "node server.mjs" "vite"',
+          dev: 'concurrently "npx tsx server.ts" "vite"',
           build: "tsc && vite build",
           preview: "vite preview",
         },
@@ -2481,6 +3288,7 @@ function scaffoldVite(root: string, config: ScaffoldConfig) {
           express: "^4.21.0",
           dotenv: "^16.4.0",
           concurrently: "^9.1.0",
+          tsx: "^4.19.0",
         },
       },
       null,
@@ -2497,6 +3305,7 @@ import { resolve } from "path";
 
 export default defineConfig({
   plugins: [react()],
+  envDir: resolve(__dirname, "../.."),
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),
@@ -2529,11 +3338,35 @@ export default defineConfig({
           isolatedModules: true,
           paths: { "@/*": ["./src/*"] },
         },
-        include: ["src"],
+        include: [
+          "src",
+          "vite-env.d.ts",
+          "server.ts",
+          "../../network-definitions.ts",
+          "../../scaffold.config.ts",
+          "../../viem-chain.ts",
+        ],
       },
       null,
       2,
     ) + "\n",
+  );
+
+  file(
+    pkg,
+    "vite-env.d.ts",
+    `/// <reference types="vite/client" />
+
+interface ImportMetaEnv {
+  readonly VITE_AGENT_ADDRESS?: string;
+  readonly VITE_RPC_URL?: string;
+  readonly VITE_WALLETCONNECT_PROJECT_ID?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+`,
   );
 
   file(pkg, "tailwind.config.ts", TAILWIND_CONFIG);
@@ -2546,6 +3379,11 @@ export default defineConfig({
   file(pkg, "components.json", JSON.stringify(viteComponentsJson, null, 2));
 
   file(pkg, "src/lib/utils.ts", UTILS_TS);
+  file(pkg, "src/lib/networks.ts", viteNetworksReexportSource());
+  file(pkg, "src/lib/burner-auto-connect.tsx", burnerAutoConnectSource());
+  file(pkg, "src/lib/wagmi-config.ts", wagmiConfigSource(config.projectName, "vite"));
+  file(pkg, "src/lib/web3-providers.tsx", web3ProvidersSource("vite"));
+  file(pkg, "src/components/ConnectWalletButton.tsx", connectWalletButtonSource());
   file(pkg, "src/components/ui/button.tsx", BUTTON_TSX);
   file(pkg, "src/components/ui/input.tsx", INPUT_TSX);
   file(pkg, "src/index.css", SHADCN_CSS);
@@ -2572,26 +3410,46 @@ export default defineConfig({
     pkg,
     "src/main.tsx",
     `import { createRoot } from "react-dom/client";
-import { App } from "./App";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { Web3Providers } from "./lib/web3-providers";
+import { Chat } from "./Chat";
+import IdentityPage from "./IdentityPage";
+import BalancesPage from "./BalancesPage";
 import "./index.css";
 
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  <Web3Providers>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Chat />} />
+        <Route path="/identity" element={<IdentityPage />} />
+        <Route path="/balances" element={<BalancesPage />} />
+      </Routes>
+    </BrowserRouter>
+  </Web3Providers>,
+);
 `,
   );
 
-  // Vite chat page (no "use client" or Next-only /debug link)
   const viteChatPage = chatPageContent(config.projectName, {
     debugLink: false,
+    linkFramework: "react-router",
   }).replace('"use client";\n\n', "");
-  const viteApp = viteChatPage
-    .replace("export default function Home()", "export function App()")
+  const viteChat = viteChatPage
+    .replace("export default function Home()", "export function Chat()")
     .replace(/@\/components/g, "@/components")
     .replace(/@\/lib/g, "@/lib");
 
-  file(pkg, "src/App.tsx", viteApp);
+  file(pkg, "src/Chat.tsx", viteChat);
   file(
     pkg,
-    "server.mjs",
+    "src/IdentityPage.tsx",
+    identityPageSource(config.projectName, "vite"),
+  );
+  file(pkg, "src/BalancesPage.tsx", balancesPageSource("vite"));
+  file(
+    pkg,
+    "server.ts",
     viteApiRoute(
       config.llm,
       config.secrets.mode,

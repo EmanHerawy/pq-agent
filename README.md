@@ -14,6 +14,8 @@ npx scaffold-agent@latest
 
 **CLI flags:** `scaffold-agent --version` / `-V`, `scaffold-agent --help` / `-h`. Unknown `-…` options exit with an error.
 
+After the project is written, the CLI runs **`npm install`** at the **monorepo root** (workspaces install all packages). Set **`SCAFFOLD_SKIP_NPM_INSTALL=1`** to skip (e.g. offline or you use another package manager).
+
 The wizard walks through:
 
 1. **Project name** — directory to create
@@ -33,6 +35,7 @@ my-agent/
 ├── scripts/
 │   ├── secrets-crypto.mjs        # encrypt/decrypt .env.secrets.encrypted
 │   ├── with-secrets.mjs          # prompt password, run deploy/start with env
+│   ├── secret-add.mjs            # just env / enc / vault / reown
 │   ├── deploy-foundry.mjs        # or deploy-hardhat.mjs
 │   ├── generate-abi-types.mjs    # auto-gen TypeScript from contract ABIs
 │   ├── generate-deployer.mjs     # create deployer wallet if missing (+ auto-fund if RPC up)
@@ -42,7 +45,11 @@ my-agent/
 │   └── nextjs/                   # or vite/ or python/ (frontend / agent)
 │       ├── app/
 │       │   ├── page.tsx          # shadcn chat UI
-│       │   └── api/chat/route.ts # LLM streaming API
+│       │   ├── identity/page.tsx # ERC-8004 / Agent0 identity + register
+│       │   ├── debug/page.tsx    # deployed contracts (Next only)
+│       │   └── api/
+│       │       ├── chat/route.ts # LLM streaming API
+│       │       └── agent0/lookup/route.ts # server-side registry search
 │       ├── components/ui/        # shadcn Button, Input
 │       ├── contracts/            # auto-generated ABI types
 │       └── ...
@@ -61,7 +68,13 @@ my-agent/
 | `just fund`     | Fund `DEPLOYER_ADDRESS` + optional `AGENT_ADDRESS` (100 ETH each from account #0) |
 | `just deploy`   | Deploy contracts & auto-gen ABIs (prompts for secrets password if encrypted)      |
 | `just start`    | Start frontend or agent (same)                                                    |
+| `just accounts` | Show QR codes for `DEPLOYER_ADDRESS` + agent address (repo-root `.env`)        |
+| `just balances` | Native balance on all chains in `network-definitions` (deployer + agent; `rpcOverrides`) |
 | `just generate` | Generate deployer wallet (password prompt if encrypted)                           |
+| `just env KEY VALUE` | Upsert repo-root `.env` (e.g. **`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`**) |
+| `just enc KEY VALUE` | Update **`.env.secrets.encrypted`** (password prompt) |
+| `just vault PATH VALUE` | Store a secret in the **1Claw vault** (wraps `with-secrets`) |
+| `just reown PROJECT_ID` | WalletConnect Cloud id → `.env` (Next: `NEXT_PUBLIC_…`, Vite: `VITE_…`) |
 
 ### ABI type generation
 

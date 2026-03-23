@@ -71,6 +71,10 @@ Options:
   -V, --version    Print the package version
 
 With no options, starts the interactive wizard.
+
+Environment:
+  SCAFFOLD_SKIP_NPM_INSTALL=1   Skip automatic npm install at the end
+  SCAFFOLD_SKIP_AUTO_FUND=1     Skip auto-fund script after scaffold
 `);
 }
 
@@ -382,9 +386,18 @@ async function main() {
 
   envVars["DEPLOYER_ADDRESS"] = deployer.address;
   envVars["DEPLOYER_PRIVATE_KEY"] = deployer.privateKey;
+
   if (agent) {
     envVars["AGENT_ADDRESS"] = agent.address;
     envVars["AGENT_PRIVATE_KEY"] = agent.privateKey;
+    envVars["NEXT_PUBLIC_AGENT_ADDRESS"] = agent.address;
+    envVars["VITE_AGENT_ADDRESS"] = agent.address;
+  }
+
+  if (framework === "nextjs") {
+    envVars["NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID"] = "";
+  } else if (framework === "vite") {
+    envVars["VITE_WALLETCONNECT_PROJECT_ID"] = "";
   }
 
   if (secrets.mode === "oneclaw") {
@@ -427,6 +440,11 @@ async function main() {
   if (secrets.mode === "oneclaw" && !(vaultId || "").trim()) {
     dotenvCommentParts.push(ONECLAW_VAULT_MISSING_COMMENT);
   }
+  if (framework === "nextjs" || framework === "vite") {
+    dotenvCommentParts.push(
+      "\n# RainbowKit / WalletConnect: optional for browser-extension wallets; set for mobile QR (free) https://cloud.walletconnect.com\n",
+    );
+  }
 
   writeEnvFile(
     projectDir,
@@ -445,6 +463,34 @@ async function main() {
     warn(
       "ONECLAW_VAULT_ID is blank — vault-backed chat needs it. After ONECLAW_API_KEY works: just list-1claw → paste vault id into .env → restart next dev",
     );
+  }
+
+  let npmInstallOk = false;
+  if (process.env.SCAFFOLD_SKIP_NPM_INSTALL === "1") {
+    info("Skipping npm install (SCAFFOLD_SKIP_NPM_INSTALL=1)");
+  } else {
+    section("Installing dependencies");
+    const npmSpinner = ora("Running npm install in project root…").start();
+    const exitCode = await new Promise<number | null>((resolve) => {
+      const child = spawn("npm", ["install"], {
+        cwd: projectDir,
+        stdio: "inherit",
+        shell: true,
+        env: process.env,
+      });
+      child.on("exit", (code) => resolve(code ?? 1));
+      child.on("error", () => resolve(null));
+    });
+    if (exitCode === 0) {
+      npmSpinner.succeed("npm install finished");
+      npmInstallOk = true;
+    } else if (exitCode === null) {
+      npmSpinner.fail("Could not run npm (is Node.js / npm on PATH?)");
+      warn(`Run manually: cd ${projectName} && npm install`);
+    } else {
+      npmSpinner.fail("npm install exited with an error");
+      warn(`Run manually when ready: cd ${projectName} && npm install`);
+    }
   }
 
   if (chain !== "none" && process.env.SCAFFOLD_SKIP_AUTO_FUND !== "1") {
@@ -535,7 +581,15 @@ async function main() {
   section("Next Steps");
 
   console.log(chalk.white(`  cd ${projectName}`));
-  console.log(chalk.white("  npm install"));
+  if (process.env.SCAFFOLD_SKIP_NPM_INSTALL === "1") {
+    console.log(
+      chalk.white("  npm install          # skipped during scaffold"),
+    );
+  } else if (!npmInstallOk) {
+    console.log(
+      chalk.white("  npm install          # finish or retry if install failed"),
+    );
+  }
   console.log("");
 
   if (chain !== "none") {
