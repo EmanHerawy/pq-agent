@@ -4,26 +4,47 @@ Interactive CLI to scaffold monorepo projects for onchain AI agents.
 
 ## Basic flow
 
-1. Scaffold out an AI Agent
+Typical path when you picked **Foundry** or **Hardhat** and want a **local** node on `http://127.0.0.1:8545`:
 
-`npx scaffold-agent@latest`
+1. **Scaffold the monorepo**
 
-2. Start your frontend
-   `cd <your_project>`
+   ```bash
+   npx scaffold-agent@latest
+   ```
 
-then...
-`just start`
+2. **Enter the project** (replace `my-agent` with the folder name you chose)
 
-3. Start your chain (In a new windows)
-   `just chain`
+   ```bash
+   cd my-agent
+   ```
 
-4. Fund your deployer (In a new window)
-   `just fund`
+3. **Run the local chain** — use a **second terminal**; the node must be up before `just fund` / `just deploy`.
 
-5. Deploy your smart contract
-   `just deploy`
+   ```bash
+   just chain
+   ```
 
-Checkout the application by navigating to http://localhost:3000
+4. **Fund the deployer** (and optional agent address from `.env`)
+
+   ```bash
+   just fund
+   ```
+
+5. **Deploy contracts** and refresh generated ABI types
+
+   ```bash
+   just deploy
+   ```
+
+6. **Start the app**
+
+   ```bash
+   just start
+   ```
+
+7. **Open the UI** — Next.js / Vite dev server is usually [http://localhost:3000](http://localhost:3000).
+
+**If you skipped a chain** in the wizard, omit steps 3–5 and point **`scaffold.config.ts`** (and RPC env vars) at the network you use, then **`just deploy`** / **`just start`** as your project README describes. If **`npm install`** didn’t run during scaffold, run it once at the repo root before **`just start`**. **Python (A2A)** projects follow the same `just` commands where applicable; see the generated README.
 
 ## Usage
 
