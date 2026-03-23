@@ -44,6 +44,7 @@ async function storeSecret(
   vaultId: string,
   path: string,
   value: string,
+  secretType: "private_key" | "api_key" = "private_key",
 ) {
   const res = await fetch(
     `${BASE_URL}/v1/vaults/${vaultId}/secrets/${encodeURIComponent(path)}`,
@@ -53,7 +54,7 @@ async function storeSecret(
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ value, type: "private_key" }),
+      body: JSON.stringify({ value, type: secretType }),
     },
   );
   if (!res.ok) {
@@ -89,6 +90,16 @@ export async function setupOneClaw(
   projectName: string,
   deployerPrivateKey: string,
   agentPrivateKey?: string,
+  options?: {
+    llmApiKey?: string;
+    /** Shroud BYOK: store at e.g. api-keys/openai */
+    shroudProviderApiKey?: { path: string; value: string };
+    /**
+     * When true (Shroud / 1Claw LLM) and no on-chain agent wallet is provided,
+     * still register a 1Claw API agent so ONECLAW_AGENT_ID + key are returned.
+     */
+    registerShroudAgent?: boolean;
+  },
 ): Promise<OneClawResult> {
   const token = await getToken(apiKey);
   const vaultId = await createVault(token, projectName);
@@ -100,6 +111,28 @@ export async function setupOneClaw(
   if (agentPrivateKey) {
     await storeSecret(token, vaultId, "private-keys/agent", agentPrivateKey);
     agentInfo = await registerAgent(token, `${projectName}-agent`);
+  } else if (options?.registerShroudAgent) {
+    agentInfo = await registerAgent(token, `${projectName}-shroud`);
+  }
+
+  if (options?.llmApiKey?.trim()) {
+    await storeSecret(
+      token,
+      vaultId,
+      "llm-api-key",
+      options.llmApiKey.trim(),
+      "api_key",
+    );
+  }
+
+  if (options?.shroudProviderApiKey?.value.trim()) {
+    await storeSecret(
+      token,
+      vaultId,
+      options.shroudProviderApiKey.path,
+      options.shroudProviderApiKey.value.trim(),
+      "api_key",
+    );
   }
 
   return { vaultId, agentInfo };

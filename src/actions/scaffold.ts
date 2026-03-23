@@ -1,6 +1,21 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ScaffoldConfig, LlmProvider, SecretsMode } from "../types.js";
+import type {
+  ScaffoldConfig,
+  LlmProvider,
+  SecretsMode,
+  ShroudBillingMode,
+  ShroudUpstreamProvider,
+} from "../types.js";
+import {
+  getDeployFoundryScript,
+  getDeployHardhatScript,
+  getFundDeployerScript,
+  getGenerateDeployerScript,
+  getList1clawIdsScript,
+  getSecretsCryptoScript,
+  getWithSecretsScript,
+} from "./project-scripts.js";
 
 function dir(base: string, ...segments: string[]) {
   const p = join(base, ...segments);
@@ -43,13 +58,13 @@ function llmEnvKey(llm: LlmProvider): string | null {
   }
 }
 
-// Direct-env helpers (used when secrets are NOT managed by 1Claw)
-function llmModelImport(llm: LlmProvider): string {
+type ThirdPartyLlm = Exclude<LlmProvider, "oneclaw">;
+
+// Direct-env helpers (used when secrets are NOT managed by 1Claw; excludes 1Claw LLM — handled separately)
+function llmModelImport(llm: ThirdPartyLlm): string {
   switch (llm) {
     case "openai":
       return 'import { openai } from "@ai-sdk/openai";';
-    case "oneclaw":
-      return 'import { createOpenAI } from "@ai-sdk/openai";\nimport { createClient } from "@1claw/sdk";';
     case "gemini":
       return 'import { google } from "@ai-sdk/google";';
     case "anthropic":
@@ -57,12 +72,10 @@ function llmModelImport(llm: LlmProvider): string {
   }
 }
 
-function llmModelCall(llm: LlmProvider): string {
+function llmModelCall(llm: ThirdPartyLlm): string {
   switch (llm) {
     case "openai":
       return 'openai("gpt-4o")';
-    case "oneclaw":
-      return 'provider("gpt-4o")';
     case "gemini":
       return 'google("gemini-2.0-flash")';
     case "anthropic":
@@ -70,10 +83,9 @@ function llmModelCall(llm: LlmProvider): string {
   }
 }
 
-// Vault-backed helpers (used when 1Claw is the secrets manager for ANY LLM)
-function llmFactoryImport(llm: LlmProvider): string {
+// Vault-backed helpers (Gemini / OpenAI / Anthropic keys in 1Claw vault as llm-api-key)
+function llmFactoryImport(llm: ThirdPartyLlm): string {
   switch (llm) {
-    case "oneclaw":
     case "openai":
       return 'import { createOpenAI } from "@ai-sdk/openai";';
     case "gemini":
@@ -83,9 +95,8 @@ function llmFactoryImport(llm: LlmProvider): string {
   }
 }
 
-function llmFactoryCall(llm: LlmProvider): string {
+function llmFactoryCall(llm: ThirdPartyLlm): string {
   switch (llm) {
-    case "oneclaw":
     case "openai":
       return "createOpenAI({ apiKey: key })";
     case "gemini":
@@ -95,9 +106,8 @@ function llmFactoryCall(llm: LlmProvider): string {
   }
 }
 
-function llmDefaultModel(llm: LlmProvider): string {
+function llmDefaultModel(llm: ThirdPartyLlm): string {
   switch (llm) {
-    case "oneclaw":
     case "openai":
       return '"gpt-4o"';
     case "gemini":
@@ -109,6 +119,24 @@ function llmDefaultModel(llm: LlmProvider): string {
 
 function useVaultForSecrets(secretsMode: SecretsMode): boolean {
   return secretsMode === "oneclaw";
+}
+
+function shroudDefaultModel(upstream: ShroudUpstreamProvider): string {
+  switch (upstream) {
+    case "openai":
+      return "gpt-4o";
+    case "anthropic":
+      return "claude-sonnet-4-20250514";
+    case "google":
+    case "gemini":
+      return "gemini-2.0-flash";
+    case "mistral":
+      return "mistral-large-latest";
+    case "cohere":
+      return "command-r-plus";
+    case "openrouter":
+      return "openai/gpt-4o";
+  }
 }
 
 // ── Root files ──────────────────────────────────────────────────────────────
@@ -137,6 +165,7 @@ function writeRootFiles(root: string, config: ScaffoldConfig) {
     "out/",
     "cache/",
     ".env",
+    ".env.secrets.encrypted",
     ".env.local",
     "private-keys/",
     ".DS_Store",
@@ -150,6 +179,10 @@ function writeRootFiles(root: string, config: ScaffoldConfig) {
     "deployments/localhost/",
     ".next/",
   ];
+  if (config.chain === "foundry") {
+    // Installed on first `just compile` / `just deploy` via `forge install --no-git`
+    gitignoreLines.push("packages/foundry/lib/");
+  }
   file(root, ".gitignore", gitignoreLines.join("\n") + "\n");
 
   const readme = `# ${config.projectName}
@@ -160,31 +193,40 @@ Onchain AI agent monorepo — scaffolded with \`scaffold-agent\`.
 
 - [Node.js](https://nodejs.org) >= 18
 - [just](https://just.systems/man/en/) command runner
-${config.chain === "foundry" ? "- [Foundry](https://book.getfoundry.sh/getting-started/installation)\n" : ""}${config.chain === "hardhat" ? "- [Hardhat](https://hardhat.org)\n" : ""}
+${config.chain === "foundry" ? "- [Foundry](https://book.getfoundry.sh/getting-started/installation)\n- First `just compile` or `just deploy` runs `forge install` for **forge-std** into `packages/foundry/lib/` (gitignored).\n" : ""}${config.chain === "hardhat" ? "- [Hardhat](https://hardhat.org)\n" : ""}
 ## Quick Start
 
 \`\`\`bash
 npm install
-${config.chain !== "none" ? "just chain        # start local blockchain (in a separate terminal)\njust deploy       # deploy contracts + generate ABI types\n" : ""}just start        # start the app
+${config.chain !== "none" ? "just chain        # start local blockchain (in a separate terminal)\njust fund         # 100 ETH each: local account #0 → DEPLOYER (+ AGENT if set)\njust deploy       # deploy contracts + generate ABI types\n" : ""}just start        # start the app
 \`\`\`
+${config.chain !== "none" ? "\n**Local deploy:** **\`just generate\`** tries to auto-fund when the RPC answers. The **scaffold CLI** runs funding **immediately** after creating the project — that only works if **\`just chain\`** (or another node) is **already** on \`http://127.0.0.1:8545\` (or \`RPC_URL\`). Otherwise run **\`just fund\`** after starting the chain, then **\`just deploy\`**. Set **\`SCAFFOLD_SKIP_AUTO_FUND=1\`** to skip. You will be prompted for your secrets password if you use 1Claw / encrypted mode.\n" : ""}${config.chain === "foundry" ? "\n**Foundry:** \`just deploy\` uses **\`DEPLOYER_PRIVATE_KEY\`** from **\`.env.secrets.encrypted\`** (password prompt). Run **\`just generate\`** if missing. **Plain** secrets mode keeps keys in \`.env\` only.\n" : ""}${config.framework === "nextjs" ? "\n**Next.js:** Chat at \`/\`. The **bug icon** in the header opens **\`/debug\`** — deployed addresses and ABI from \`deployedContracts.ts\` (read-only, [Scaffold-ETH 2](https://github.com/scaffold-eth/scaffold-eth-2)–style Debug Contracts). **\`next.config.js\`** loads **repo-root \`.env\`** so \`ONECLAW_VAULT_ID\` and other root vars work when you run \`next dev\` from \`packages/nextjs\`.\n" : ""}
 
 ## Commands
 
 | Command | Description |
 |---|---|
-${config.chain !== "none" ? "| \`just chain\` | Start local blockchain |\n| \`just deploy\` | Deploy contracts & auto-generate ABI types |\n" : ""}| \`just start\` | Start the frontend / agent |
-| \`just generate\` | Generate a deployer wallet (if none exists) |
+${config.chain !== "none" ? "| \`just chain\` | Start local blockchain |\n| \`just fund\` | Fund \`DEPLOYER_ADDRESS\` + optional \`AGENT_ADDRESS\` (100 ETH each from account #0) |\n| \`just deploy\` | Deploy contracts & auto-generate ABI types |\n" : ""}${config.secrets.mode === "oneclaw" || config.llm === "oneclaw" ? "| \`just list-1claw\` | Print vault IDs + agent UUIDs from API (\`ONECLAW_API_KEY\`) |\n" : ""}| \`just start\` | Start the frontend / agent (may prompt for secrets password) |
+| \`just generate\` | Generate a deployer wallet (password prompt if \`.env.secrets.encrypted\` exists) |
 
 ## Secrets
 
 ${
   config.secrets.mode === "oneclaw"
     ? `This project uses [1Claw](https://1claw.xyz) for secrets management.
-Private keys are stored in your 1Claw vault — they are **not** on disk.`
+The vault holds deployer and agent keys for app runtime. **Private keys and API keys** are stored in **\`.env.secrets.encrypted\`** (AES-256-GCM). Plain \`.env\` only has non-sensitive values (addresses, vault id, model names). **\`just deploy\`**, **\`just start\`**, etc. prompt for your password and load secrets into the process environment (nothing sensitive written to disk). CI: set **\`SCAFFOLD_ENV_PASSWORD\`**.
+
+**Programmatic IDs:** With your user **\`ONECLAW_API_KEY\`**, run **\`just list-1claw\`** (or \`node scripts/list-1claw-ids.mjs\`) to call \`GET /v1/vaults\` and \`GET /v1/agents\` — you get **vault UUIDs** and **agent UUIDs** for \`ONECLAW_VAULT_ID\` / \`ONECLAW_AGENT_ID\`. Agent **API keys** are not listable; they are only returned when you **create** an agent (\`POST /v1/agents\`, as in scaffold setup) or **rotate** (\`@1claw/sdk\` \`client.agents.rotateKey(id)\`).`
     : config.secrets.mode === "encrypted"
-      ? "Your \\`.env\\` is encrypted with AES-256-GCM. Decrypt with the password you set during setup."
+      ? "Secrets live in **\\`.env.secrets.encrypted\\`** (AES-256-GCM). **\\`.env\\`** holds only non-sensitive values. Use **\\`just deploy\\`**, **\\`just start\\`**, etc. — they prompt for your password (or set **\\`SCAFFOLD_ENV_PASSWORD\\`** in CI)."
       : "Secrets are stored in a plain \\`.env\\` file. **Do not commit it.**"
 }
+${config.llm === "oneclaw" ? `
+
+## Shroud (1Claw LLM chat)
+
+**ONECLAW_AGENT_ID** must be the **1Claw agent UUID** (from the dashboard or \`just list-1claw\`). It is **not** **AGENT_ADDRESS** (your \`0x…\` on-chain wallet). Using an Ethereum address there causes Shroud to return \`Invalid agent_id format\`. The scaffold CLI prints this reminder when you create the project; your \`.env\` also includes a short comment block.
+` : ""}
 `;
   file(root, "README.md", readme);
 }
@@ -207,23 +249,35 @@ function writeJustfile(root: string, config: ScaffoldConfig) {
       "chain:",
       "    cd packages/foundry && anvil",
       "",
+      "# Fund DEPLOYER + optional AGENT (100 ETH each from Anvil default account #0; chain must be running)",
+      "fund:",
+      "    node scripts/fund-deployer.mjs",
+      "",
       "# Compile contracts",
       "compile:",
-      "    cd packages/foundry && forge build",
-      "",
-      "# Deploy contracts and generate ABI types",
-      "deploy network='localhost':",
       "    #!/usr/bin/env bash",
       "    set -euo pipefail",
       "    cd packages/foundry",
+      "    if [ ! -f lib/forge-std/src/Script.sol ]; then",
+      '      echo "Installing forge-std (first run)..."',
+      "      forge install foundry-rs/forge-std --no-git",
+      "    fi",
       "    forge build",
-      '    forge script script/Deploy.s.sol:Deploy --broadcast --rpc-url http://127.0.0.1:8545',
-      "    cd ../..",
-      "    node scripts/generate-abi-types.mjs",
+      "",
+      "# Deploy contracts and generate ABI types (prompts for secrets password if .env.secrets.encrypted exists)",
+      "deploy network='localhost':",
+      "    node scripts/with-secrets.mjs -- node scripts/deploy-foundry.mjs",
       "",
       "# Run contract tests",
       "test:",
-      "    cd packages/foundry && forge test",
+      "    #!/usr/bin/env bash",
+      "    set -euo pipefail",
+      "    cd packages/foundry",
+      "    if [ ! -f lib/forge-std/src/Script.sol ]; then",
+      '      echo "Installing forge-std (first run)..."',
+      "      forge install foundry-rs/forge-std --no-git",
+      "    fi",
+      "    forge test",
       "",
     );
   } else if (config.chain === "hardhat") {
@@ -232,18 +286,19 @@ function writeJustfile(root: string, config: ScaffoldConfig) {
       "chain:",
       "    cd packages/hardhat && npx hardhat node",
       "",
+      "# Fund DEPLOYER + optional AGENT (100 ETH each from Hardhat default account #0; chain must be running)",
+      "fund:",
+      "    node scripts/fund-deployer.mjs",
+      "",
       "# Compile contracts",
       "compile:",
       "    cd packages/hardhat && npx hardhat compile",
       "",
-      "# Deploy contracts and generate ABI types",
+      "# Deploy contracts and generate ABI types (prompts for secrets password if .env.secrets.encrypted exists)",
       "deploy network='localhost':",
       "    #!/usr/bin/env bash",
-      "    set -euo pipefail",
-      "    cd packages/hardhat",
-      "    npx hardhat deploy --network {{network}}",
-      "    cd ../..",
-      "    node scripts/generate-abi-types.mjs",
+      "    export HARDHAT_NETWORK={{network}}",
+      "    node scripts/with-secrets.mjs -- node scripts/deploy-hardhat.mjs",
       "",
       "# Run contract tests",
       "test:",
@@ -254,23 +309,32 @@ function writeJustfile(root: string, config: ScaffoldConfig) {
 
   if (config.framework === "nextjs") {
     lines.push(
-      "# Start NextJS frontend",
+      "# Start NextJS frontend (prompts for secrets password if .env.secrets.encrypted exists)",
       "start:",
-      "    cd packages/nextjs && npm run dev",
+      "    node scripts/with-secrets.mjs -- sh -c 'cd packages/nextjs && npm run dev'",
       "",
     );
   } else if (config.framework === "vite") {
     lines.push(
-      "# Start Vite frontend + API server",
+      "# Start Vite frontend + API server (prompts for secrets password if .env.secrets.encrypted exists)",
       "start:",
-      "    cd packages/vite && npm run dev",
+      "    node scripts/with-secrets.mjs -- sh -c 'cd packages/vite && npm run dev'",
       "",
     );
   } else if (config.framework === "python") {
     lines.push(
-      "# Start Python agent",
+      "# Start Python agent (prompts for secrets password if .env.secrets.encrypted exists)",
       "start:",
-      "    cd packages/python && python -m agent",
+      "    node scripts/with-secrets.mjs -- sh -c 'cd packages/python && python -m agent'",
+      "",
+    );
+  }
+
+  if (config.secrets.mode === "oneclaw" || config.llm === "oneclaw") {
+    lines.push(
+      "# List 1Claw vault + agent UUIDs (needs ONECLAW_API_KEY; use with encrypted secrets)",
+      "list-1claw:",
+      "    node scripts/with-secrets.mjs -- node scripts/list-1claw-ids.mjs",
       "",
     );
   }
@@ -289,6 +353,18 @@ function writeJustfile(root: string, config: ScaffoldConfig) {
 
 function writeScripts(root: string, config: ScaffoldConfig) {
   const scripts = dir(root, "scripts");
+
+  file(scripts, "secrets-crypto.mjs", getSecretsCryptoScript());
+  file(scripts, "with-secrets.mjs", getWithSecretsScript());
+  if (config.secrets.mode === "oneclaw" || config.llm === "oneclaw") {
+    file(scripts, "list-1claw-ids.mjs", getList1clawIdsScript());
+  }
+  if (config.chain === "foundry") {
+    file(scripts, "deploy-foundry.mjs", getDeployFoundryScript());
+  }
+  if (config.chain === "hardhat") {
+    file(scripts, "deploy-hardhat.mjs", getDeployHardhatScript());
+  }
 
   // ── generate-abi-types.mjs ──────────────────────────────────────────────
   const abiScript = `#!/usr/bin/env node
@@ -434,47 +510,12 @@ if (!written) {
 
   file(scripts, "generate-abi-types.mjs", abiScript);
 
-  // ── generate-deployer.mjs ───────────────────────────────────────────────
-  const deployerScript = `#!/usr/bin/env node
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join } from "path";
+  file(scripts, "generate-deployer.mjs", getGenerateDeployerScript());
 
-const ENV_PATH = join(process.cwd(), ".env");
-
-if (existsSync(ENV_PATH)) {
-  const env = readFileSync(ENV_PATH, "utf8");
-  if (/DEPLOYER_PRIVATE_KEY=0x[0-9a-fA-F]+/.test(env)) {
-    const match = env.match(/DEPLOYER_ADDRESS=([^\\n]+)/);
-    console.log("\\n  Deployer already exists.");
-    if (match) console.log("  Address: " + match[1]);
-    console.log("");
-    process.exit(0);
+  // ── fund-deployer.mjs (local account #0 → DEPLOYER + optional AGENT) ─
+  if (config.chain !== "none") {
+    file(scripts, "fund-deployer.mjs", getFundDeployerScript());
   }
-}
-
-const { generatePrivateKey, privateKeyToAccount } = await import("viem/accounts");
-const privateKey = generatePrivateKey();
-const account = privateKeyToAccount(privateKey);
-
-let envContent = existsSync(ENV_PATH) ? readFileSync(ENV_PATH, "utf8") : "";
-if (envContent.length > 0 && !envContent.endsWith("\\n")) envContent += "\\n";
-envContent += "DEPLOYER_PRIVATE_KEY=" + privateKey + "\\n";
-envContent += "DEPLOYER_ADDRESS=" + account.address + "\\n";
-writeFileSync(ENV_PATH, envContent, { mode: 0o600 });
-
-console.log("\\n  \\u2714 Generated deployer wallet");
-console.log("  Address: " + account.address);
-console.log("");
-
-try {
-  const qrcode = await import("qrcode-terminal");
-  qrcode.default.generate(account.address, { small: true });
-} catch {
-  // qrcode-terminal not available
-}
-`;
-
-  file(scripts, "generate-deployer.mjs", deployerScript);
 }
 
 // ── Foundry ─────────────────────────────────────────────────────────────────
@@ -515,8 +556,12 @@ contract AgentWallet {
     event Executed(address indexed target, uint256 value, bytes data);
 
     modifier onlyAuthorized() {
-        require(msg.sender == owner || msg.sender == agent, "unauthorized");
+        _onlyAuthorized();
         _;
+    }
+
+    function _onlyAuthorized() internal view {
+        require(msg.sender == owner || msg.sender == agent, "unauthorized");
     }
 
     constructor(address _agent) {
@@ -546,8 +591,8 @@ contract AgentWallet {
     `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "forge-std/Script.sol";
-import "../src/AgentWallet.sol";
+import {Script} from "forge-std/Script.sol";
+import {AgentWallet} from "../src/AgentWallet.sol";
 
 contract Deploy is Script {
     function run() external {
@@ -568,8 +613,8 @@ contract Deploy is Script {
     `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "forge-std/Test.sol";
-import "../src/AgentWallet.sol";
+import {Test} from "forge-std/Test.sol";
+import {AgentWallet} from "../src/AgentWallet.sol";
 
 contract AgentWalletTest is Test {
     AgentWallet wallet;
@@ -667,8 +712,12 @@ contract AgentWallet {
     event Executed(address indexed target, uint256 value, bytes data);
 
     modifier onlyAuthorized() {
-        require(msg.sender == owner || msg.sender == agent, "unauthorized");
+        _onlyAuthorized();
         _;
+    }
+
+    function _onlyAuthorized() internal view {
+        require(msg.sender == owner || msg.sender == agent, "unauthorized");
     }
 
     constructor(address _agent) {
@@ -925,17 +974,51 @@ const COMPONENTS_JSON = JSON.stringify(
   2,
 );
 
-function chatPageContent(projectName: string): string {
+function chatPageContent(
+  projectName: string,
+  options?: { debugLink?: boolean },
+): string {
+  const debugLink = options?.debugLink !== false;
+  const linkImports = debugLink
+    ? `import Link from "next/link";
+`
+    : "";
+  const cnImport = debugLink
+    ? `import { cn } from "@/lib/utils";
+`
+    : "";
+  const lucideIcons = debugLink
+    ? `import { SendHorizontal, Bot, User, Bug } from "lucide-react";`
+    : `import { SendHorizontal, Bot, User } from "lucide-react";`;
+  const headerBug = debugLink
+    ? `
+        <Link
+          href="/debug"
+          className={cn(
+            "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md",
+            "text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors",
+          )}
+          title="Debug contracts"
+        >
+          <Bug className="h-4 w-4" />
+        </Link>`
+    : "";
+
   return `"use client";
 
-import { useChat } from "ai/react";
+${linkImports}import { useChat } from "ai/react";
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SendHorizontal, Bot, User } from "lucide-react";
+${cnImport}${lucideIcons}
 
 export default function Home() {
-  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat();
+  const { messages, input, handleInputChange, handleSubmit, isLoading, error } =
+    useChat({
+      onError(err) {
+        console.error("Chat error:", err);
+      },
+    });
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -948,11 +1031,38 @@ export default function Home() {
         <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
           <Bot className="h-4 w-4 text-primary-foreground" />
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="text-sm font-semibold">${projectName}</h1>
           <p className="text-xs text-muted-foreground">Onchain AI Agent</p>
-        </div>
+        </div>${headerBug}
       </header>
+
+      {error && (
+        <div className="px-6 py-2 text-sm text-destructive bg-destructive/10 border-b border-border space-y-1">
+          <p className="whitespace-pre-wrap font-medium">
+            {(() => {
+              const raw = error.message;
+              const i = raw.indexOf("{");
+              if (i >= 0) {
+                try {
+                  const j = JSON.parse(raw.slice(i));
+                  if (j && typeof j.error === "string") return j.error;
+                } catch {
+                  /* ignore */
+                }
+              }
+              return raw;
+            })()}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Fix .env (or .env.secrets.encrypted), then restart{" "}
+            <code className="rounded bg-muted px-1">next dev</code>.{" "}
+            <code className="rounded bg-muted px-1">ONECLAW_AGENT_ID</code> is the
+            1Claw agent UUID — not{" "}
+            <code className="rounded bg-muted px-1">AGENT_ADDRESS</code>.
+          </p>
+        </div>
+      )}
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6">
         {messages.length === 0 && (
@@ -1024,9 +1134,340 @@ export default function Home() {
 `;
 }
 
-function nextApiRoute(llm: LlmProvider, secretsMode: SecretsMode): string {
-  if (useVaultForSecrets(secretsMode)) {
-    return `import { streamText } from "ai";
+/** Next.js /debug — contract addresses + ABI summary (Scaffold-ETH 2–style). */
+function debugPageContent(): string {
+  return `"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+import { ArrowLeft, Bug, Copy, Check } from "lucide-react";
+import deployedContracts from "@/contracts/deployedContracts";
+
+type AbiItem = {
+  type?: string;
+  name?: string;
+  stateMutability?: string;
+  inputs?: { name?: string; type: string }[];
+};
+
+function formatInputs(inputs: { name?: string; type: string }[] | undefined) {
+  if (!inputs?.length) return "()";
+  return (
+    "(" +
+    inputs.map((i) => (i.name ? i.name + ": " : "") + i.type).join(", ") +
+    ")"
+  );
+}
+
+function AbiSummary({ abi }: { abi: readonly unknown[] }) {
+  const items = abi as AbiItem[];
+  const functions = items.filter((x) => x.type === "function");
+  const events = items.filter((x) => x.type === "event");
+  return (
+    <div className="space-y-4 text-sm">
+      {functions.length > 0 && (
+        <div>
+          <h4 className="font-medium text-foreground mb-2">Functions</h4>
+          <ul className="font-mono text-xs text-muted-foreground space-y-1">
+            {functions.map((f, i) => (
+              <li key={i}>
+                <span className="text-foreground">{f.name}</span>
+                {formatInputs(f.inputs)}
+                {f.stateMutability ? (
+                  <span className="text-muted-foreground/70">
+                    {" "}
+                    — {f.stateMutability}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {events.length > 0 && (
+        <div>
+          <h4 className="font-medium text-foreground mb-2">Events</h4>
+          <ul className="font-mono text-xs text-muted-foreground space-y-1">
+            {events.map((e, i) => (
+              <li key={i}>
+                <span className="text-foreground">{e.name}</span>
+                {formatInputs(e.inputs)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CopyBtn({ text }: { text: string }) {
+  const [ok, setOk] = useState(false);
+  return (
+    <button
+      type="button"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted text-muted-foreground"
+      title="Copy address"
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => {
+          setOk(true);
+          setTimeout(() => setOk(false), 1500);
+        });
+      }}
+    >
+      {ok ? (
+        <Check className="h-3.5 w-3.5 text-green-500" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
+}
+
+export default function DebugPage() {
+  const data = deployedContracts as Record<
+    string,
+    Record<string, { address: string; abi: readonly unknown[] }>
+  >;
+  const entries = Object.entries(data).filter(
+    ([, contracts]) => Object.keys(contracts).length > 0,
+  );
+
+  return (
+    <div className="flex flex-col min-h-screen">
+      <header className="border-b border-border px-6 py-4 flex items-center gap-4">
+        <Link
+          href="/"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md hover:bg-accent text-muted-foreground"
+          title="Back to chat"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+        <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
+          <Bug className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <div>
+          <h1 className="text-sm font-semibold">Debug contracts</h1>
+          <p className="text-xs text-muted-foreground">
+            Deployed addresses &amp; ABI from{" "}
+            <code className="text-xs bg-muted px-1 rounded">deployedContracts.ts</code>
+          </p>
+        </div>
+      </header>
+
+      <main className="flex-1 p-6 max-w-3xl mx-auto w-full space-y-8">
+        {entries.length === 0 ? (
+          <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground space-y-2">
+            <p>No deployed contracts in <code className="bg-muted px-1 rounded">deployedContracts.ts</code> yet.</p>
+            <p>Run: <code className="bg-muted px-1 rounded">just chain</code> → <code className="bg-muted px-1 rounded">just fund</code> → <code className="bg-muted px-1 rounded">just deploy</code></p>
+          </div>
+        ) : (
+          entries.map(([chainId, contracts]) => (
+            <section key={chainId} className="space-y-4">
+              <h2 className="text-lg font-semibold">Chain {chainId}</h2>
+              {Object.entries(contracts).map(([name, meta]) => (
+                <article
+                  key={name}
+                  className="rounded-lg border border-border bg-card p-5 space-y-3"
+                >
+                  <h3 className="font-mono text-base font-medium">{name}</h3>
+                  <div className="flex items-center gap-2 font-mono text-xs break-all bg-muted/50 rounded-md px-3 py-2">
+                    <span className="text-muted-foreground shrink-0">address</span>
+                    <span className="flex-1">{meta.address}</span>
+                    <CopyBtn text={meta.address} />
+                  </div>
+                  <AbiSummary abi={meta.abi} />
+                </article>
+              ))}
+            </section>
+          ))
+        )}
+        <p className="text-xs text-muted-foreground border-t border-border pt-6">
+          UI pattern inspired by{" "}
+          <a
+            href="https://github.com/scaffold-eth/scaffold-eth-2"
+            className="underline hover:text-foreground"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Scaffold-ETH 2
+          </a>
+          . This page is read-only; add wagmi/viem + wallet to call functions like the SE-2 Debug tab.
+        </p>
+      </main>
+    </div>
+  );
+}
+`;
+}
+
+/**
+ * 1Claw Shroud LLM proxy — OpenAI-compatible /v1/chat/completions.
+ * @see https://docs.1claw.xyz/docs/guides/shroud
+ *
+ * SHROUD_BILLING_MODE=token_billing → no X-Shroud-Api-Key (enable billing on 1claw.xyz).
+ * SHROUD_BILLING_MODE=provider_api_key → vault://… from api-keys/{provider} or SHROUD_PROVIDER_API_KEY.
+ */
+function nextApiRouteOneClawShroud(
+  upstream: ShroudUpstreamProvider,
+  billingModeDefault: ShroudBillingMode,
+): string {
+  const modelFallback = shroudDefaultModel(upstream);
+  return `import { convertToCoreMessages, streamText } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+
+const shroudBaseURL =
+  process.env.SHROUD_BASE_URL || "https://shroud.1claw.xyz/v1";
+
+const shroudProvider =
+  process.env.SHROUD_LLM_PROVIDER || "${upstream}";
+
+const defaultModel =
+  process.env.SHROUD_DEFAULT_MODEL || "${modelFallback}";
+
+const billingMode =
+  (process.env.SHROUD_BILLING_MODE as "token_billing" | "provider_api_key") ||
+  "${billingModeDefault}";
+
+/** Canonical 8-4-4-4-12 hex (any version/variant 1Claw may return). */
+const ONECLAW_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function normalizeOneclawEnvValue(v) {
+  let s = (v || "").trim();
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  if (s === "undefined" || s === "null") return "";
+  return s;
+}
+
+function looksLikeEthereumAddress(s) {
+  if (!s.startsWith("0x") && !s.startsWith("0X")) return false;
+  const hex = s.slice(2);
+  return (
+    /^[0-9a-fA-F]+$/.test(hex) && (hex.length === 40 || hex.length === 64)
+  );
+}
+
+function shroudConfigError(message: string) {
+  return new Response(JSON.stringify({ error: message }), {
+    status: 400,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function validateShroudEnv():
+  | { ok: true; agentId: string; agentKey: string }
+  | { ok: false; response: Response } {
+  const agentId = normalizeOneclawEnvValue(process.env.ONECLAW_AGENT_ID);
+  const agentKey = normalizeOneclawEnvValue(process.env.ONECLAW_AGENT_API_KEY);
+
+  if (!agentId || !agentKey) {
+    return {
+      ok: false,
+      response: shroudConfigError(
+        "Missing ONECLAW_AGENT_ID or ONECLAW_AGENT_API_KEY. Create an agent in 1claw.xyz and copy its UUID (not a wallet address) + API key into .env / .env.secrets.encrypted, then restart next dev. If you see ONECLAW_AGENT_ID=undefined in .env, remove it — that is invalid; use just list-1claw or the dashboard for the real UUID.",
+      ),
+    };
+  }
+
+  if (!ONECLAW_UUID_RE.test(agentId)) {
+    const hint = looksLikeEthereumAddress(agentId)
+      ? " You pasted an Ethereum address — that belongs in AGENT_ADDRESS (on-chain wallet), not here. Use the agent UUID from 1claw.xyz (or run just list-1claw with ONECLAW_API_KEY)."
+      : agentId.includes("0x") || agentId.includes("0X")
+        ? " This value looks like a hex address. Shroud needs the 1Claw agent UUID from the dashboard (just list-1claw), not an Ethereum address."
+        : "";
+    return {
+      ok: false,
+      response: shroudConfigError(
+        "ONECLAW_AGENT_ID must be a UUID from the 1Claw dashboard (e.g. 550e8400-e29b-41d4-a716-446655440000). Ethereum addresses are rejected with \\"Invalid agent_id format\\"." +
+          hint,
+      ),
+    };
+  }
+
+  if (billingMode === "provider_api_key") {
+    const vaultId = (process.env.ONECLAW_VAULT_ID || "").trim();
+    const vaultPath = (process.env.SHROUD_PROVIDER_VAULT_PATH || "").trim();
+    const inlineKey = (process.env.SHROUD_PROVIDER_API_KEY || "").trim();
+    if (vaultPath && !inlineKey && !vaultId) {
+      return {
+        ok: false,
+        response: shroudConfigError(
+          "ONECLAW_VAULT_ID is empty but SHROUD_PROVIDER_VAULT_PATH is set. Copy your vault ID from 1claw.xyz into ONECLAW_VAULT_ID (needed for vault://… Shroud headers).",
+        ),
+      };
+    }
+  }
+
+  return { ok: true, agentId, agentKey };
+}
+
+export async function POST(req: Request) {
+  let messages: unknown[];
+  try {
+    const body = await req.json();
+    messages = body.messages;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return new Response(JSON.stringify({ error: "Missing messages" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const creds = validateShroudEnv();
+  if (!creds.ok) return creds.response;
+  const { agentId, agentKey } = creds;
+
+  const headers: Record<string, string> = {
+    "X-Shroud-Agent-Key": \`\${agentId}:\${agentKey}\`,
+    "X-Shroud-Provider": shroudProvider,
+  };
+
+  if (billingMode === "provider_api_key") {
+    const vaultId = (process.env.ONECLAW_VAULT_ID || "").trim();
+    const vaultPath = (process.env.SHROUD_PROVIDER_VAULT_PATH || "").trim();
+    const inlineKey = (process.env.SHROUD_PROVIDER_API_KEY || "").trim();
+    if (vaultId && vaultPath) {
+      headers["X-Shroud-Api-Key"] = \`vault://\${vaultId}/\${vaultPath}\`;
+    } else if (inlineKey) {
+      headers["X-Shroud-Api-Key"] = inlineKey;
+    }
+  }
+
+  const openai = createOpenAI({
+    apiKey: agentKey || "shroud",
+    baseURL: shroudBaseURL,
+    headers,
+  });
+
+  const result = streamText({
+    model: openai(defaultModel),
+    system:
+      "You are an onchain AI agent assistant. Help users interact with smart contracts and manage their wallets.",
+    messages: convertToCoreMessages(messages),
+    onError({ error }) {
+      console.error("[api/chat] streamText error:", error);
+    },
+  });
+
+  return result.toDataStreamResponse();
+}
+`;
+}
+
+function nextApiRouteVaultThirdParty(llm: ThirdPartyLlm): string {
+  return `import { convertToCoreMessages, streamText } from "ai";
 ${llmFactoryImport(llm)}
 import { createClient } from "@1claw/sdk";
 
@@ -1037,48 +1478,136 @@ const client = createClient({
 
 let cachedKey: string | null = null;
 
-async function getLlmKey() {
-  if (!cachedKey) {
-    const { data } = await client.secrets.get(
-      process.env.ONECLAW_VAULT_ID!,
-      "llm-api-key",
+async function getLlmKey(): Promise<string> {
+  if (cachedKey) return cachedKey;
+  const vaultId = (process.env.ONECLAW_VAULT_ID || "").trim();
+  const apiKey = (process.env.ONECLAW_API_KEY || "").trim();
+  if (!apiKey) {
+    throw new Error(
+      "ONECLAW_API_KEY is missing. Set it in .env so the server can read the vault.",
     );
-    cachedKey = data.value;
   }
+  if (!vaultId) {
+    throw new Error(
+      "ONECLAW_VAULT_ID is missing. Copy your vault id from 1claw.xyz into .env.",
+    );
+  }
+  const res = await client.secrets.get(vaultId, "llm-api-key");
+  if (res.error) {
+    throw new Error(
+      "1Claw vault read failed: " +
+        res.error.message +
+        ". Check ONECLAW_API_KEY and ONECLAW_VAULT_ID.",
+    );
+  }
+  const value = res.data?.value;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(
+      'No secret at vault path "llm-api-key". Add your LLM API key in the 1Claw dashboard (same path the scaffold uses) or set it via the API, then restart next dev.',
+    );
+  }
+  cachedKey = value.trim();
   return cachedKey;
 }
 
 export async function POST(req: Request) {
-  const { messages } = await req.json();
-  const key = await getLlmKey();
+  let messages: unknown[];
+  try {
+    const body = await req.json();
+    messages = body.messages;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return new Response(JSON.stringify({ error: "Missing messages" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  let key: string;
+  try {
+    key = await getLlmKey();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[api/chat] getLlmKey:", msg);
+    return new Response(JSON.stringify({ error: msg }), {
+      status: 502,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   const provider = ${llmFactoryCall(llm)};
 
   const result = streamText({
     model: provider(${llmDefaultModel(llm)}),
-    system: "You are an onchain AI agent assistant. Help users interact with smart contracts and manage their wallets.",
-    messages,
+    system:
+      "You are an onchain AI agent assistant. Help users interact with smart contracts and manage their wallets.",
+    messages: convertToCoreMessages(messages),
+    onError({ error }) {
+      console.error("[api/chat] streamText error:", error);
+    },
   });
 
   return result.toDataStreamResponse();
 }
 `;
-  }
+}
 
-  return `import { streamText } from "ai";
+function nextApiRouteDirectThirdParty(llm: ThirdPartyLlm): string {
+  return `import { convertToCoreMessages, streamText } from "ai";
 ${llmModelImport(llm)}
 
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  let messages: unknown[];
+  try {
+    const body = await req.json();
+    messages = body.messages;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return new Response(JSON.stringify({ error: "Missing messages" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   const result = streamText({
     model: ${llmModelCall(llm)},
-    system: "You are an onchain AI agent assistant. Help users interact with smart contracts and manage their wallets.",
-    messages,
+    system:
+      "You are an onchain AI agent assistant. Help users interact with smart contracts and manage their wallets.",
+    messages: convertToCoreMessages(messages),
+    onError({ error }) {
+      console.error("[api/chat] streamText error:", error);
+    },
   });
 
   return result.toDataStreamResponse();
 }
 `;
+}
+
+function nextApiRoute(
+  llm: LlmProvider,
+  secretsMode: SecretsMode,
+  shroudUpstream?: ShroudUpstreamProvider,
+  shroudBillingMode?: ShroudBillingMode,
+): string {
+  if (llm === "oneclaw") {
+    return nextApiRouteOneClawShroud(
+      shroudUpstream ?? "openai",
+      shroudBillingMode ?? "token_billing",
+    );
+  }
+  if (useVaultForSecrets(secretsMode)) {
+    return nextApiRouteVaultThirdParty(llm);
+  }
+  return nextApiRouteDirectThirdParty(llm);
 }
 
 // ── NextJS ──────────────────────────────────────────────────────────────────
@@ -1086,6 +1615,7 @@ export async function POST(req: Request) {
 function scaffoldNextJS(root: string, config: ScaffoldConfig) {
   const pkg = dir(root, "packages", "nextjs");
   dir(pkg, "app", "api", "chat");
+  dir(pkg, "app", "debug");
   dir(pkg, "components", "ui");
   dir(pkg, "lib");
   dir(pkg, "contracts");
@@ -1138,8 +1668,24 @@ function scaffoldNextJS(root: string, config: ScaffoldConfig) {
   file(
     pkg,
     "next.config.js",
-    `/** @type {import('next').NextConfig} */
-const nextConfig = {};
+    `const path = require("path");
+const { loadEnvConfig } = require("@next/env");
+
+// Load repo-root .env (ONECLAW_VAULT_ID, RPC_URL, …). Next only auto-loads env from packages/nextjs/ otherwise.
+loadEnvConfig(path.join(__dirname, "..", ".."));
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  async redirects() {
+    return [
+      {
+        source: "/favicon.ico",
+        destination: "/icon.svg",
+        permanent: false,
+      },
+    ];
+  },
+};
 module.exports = nextConfig;
 `,
   );
@@ -1196,6 +1742,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "${config.projectName}",
   description: "Onchain AI Agent",
+  icons: { icon: "/icon.svg" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -1208,8 +1755,28 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 `,
   );
 
+  file(
+    pkg,
+    "public/icon.svg",
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="App">
+  <rect width="32" height="32" rx="8" fill="#6366f1"/>
+  <path fill="white" d="M8 20c0-4 3-7 8-7s8 3 8 7v2H8v-2zm4-9a4 4 0 1 1 8 0 4 4 0 0 1-8 0z" opacity=".9"/>
+</svg>
+`,
+  );
+
   file(pkg, "app/page.tsx", chatPageContent(config.projectName));
-  file(pkg, "app/api/chat/route.ts", nextApiRoute(config.llm, config.secrets.mode));
+  file(pkg, "app/debug/page.tsx", debugPageContent());
+  file(
+    pkg,
+    "app/api/chat/route.ts",
+    nextApiRoute(
+      config.llm,
+      config.secrets.mode,
+      config.shroudUpstream,
+      config.shroudBillingMode,
+    ),
+  );
 
   file(
     pkg,
@@ -1226,10 +1793,150 @@ export default deployedContracts;
 
 // ── Vite ────────────────────────────────────────────────────────────────────
 
-function viteApiRoute(llm: LlmProvider, secretsMode: SecretsMode): string {
-  if (useVaultForSecrets(secretsMode)) {
-    return `import express from "express";
-import { streamText } from "ai";
+function viteApiRouteOneClawShroud(
+  upstream: ShroudUpstreamProvider,
+  billingModeDefault: ShroudBillingMode,
+): string {
+  const modelFallback = shroudDefaultModel(upstream);
+  return `import express from "express";
+import { convertToCoreMessages, streamText } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+import "dotenv/config";
+
+const shroudBaseURL =
+  process.env.SHROUD_BASE_URL || "https://shroud.1claw.xyz/v1";
+
+const shroudProvider =
+  process.env.SHROUD_LLM_PROVIDER || "${upstream}";
+
+const defaultModel =
+  process.env.SHROUD_DEFAULT_MODEL || "${modelFallback}";
+
+const billingMode =
+  (process.env.SHROUD_BILLING_MODE as "token_billing" | "provider_api_key") ||
+  "${billingModeDefault}";
+
+const ONECLAW_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function normalizeOneclawEnvValue(v) {
+  let s = (v || "").trim();
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    s = s.slice(1, -1).trim();
+  }
+  if (s === "undefined" || s === "null") return "";
+  return s;
+}
+
+function looksLikeEthereumAddress(s) {
+  if (!s.startsWith("0x") && !s.startsWith("0X")) return false;
+  const hex = s.slice(2);
+  return (
+    /^[0-9a-fA-F]+$/.test(hex) && (hex.length === 40 || hex.length === 64)
+  );
+}
+
+function validateShroudEnvExpress(res) {
+  const agentId = normalizeOneclawEnvValue(process.env.ONECLAW_AGENT_ID);
+  const agentKey = normalizeOneclawEnvValue(process.env.ONECLAW_AGENT_API_KEY);
+
+  if (!agentId || !agentKey) {
+    res.status(400).json({
+      error:
+        "Missing ONECLAW_AGENT_ID or ONECLAW_AGENT_API_KEY. Use the agent UUID from 1claw.xyz (not a wallet address). If .env has ONECLAW_AGENT_ID=undefined, remove it — use just list-1claw for the real UUID.",
+    });
+    return null;
+  }
+
+  if (!ONECLAW_UUID_RE.test(agentId)) {
+    const hint = looksLikeEthereumAddress(agentId)
+      ? " You pasted an Ethereum address — use AGENT_ADDRESS for that; ONECLAW_AGENT_ID is the 1claw.xyz agent UUID (just list-1claw)."
+      : agentId.includes("0x") || agentId.includes("0X")
+        ? " This value looks like a hex address. Use the 1Claw agent UUID from the dashboard (just list-1claw)."
+        : "";
+    res.status(400).json({
+      error:
+        "ONECLAW_AGENT_ID must be a UUID from the 1Claw dashboard. Ethereum addresses cause \\"Invalid agent_id format\\" from Shroud." +
+        hint,
+    });
+    return null;
+  }
+
+  if (billingMode === "provider_api_key") {
+    const vaultId = (process.env.ONECLAW_VAULT_ID || "").trim();
+    const vaultPath = (process.env.SHROUD_PROVIDER_VAULT_PATH || "").trim();
+    const inlineKey = (process.env.SHROUD_PROVIDER_API_KEY || "").trim();
+    if (vaultPath && !inlineKey && !vaultId) {
+      res.status(400).json({
+        error:
+          "ONECLAW_VAULT_ID is required when SHROUD_PROVIDER_VAULT_PATH is set (vault:// header).",
+      });
+      return null;
+    }
+  }
+
+  return { agentId, agentKey };
+}
+
+const app = express();
+app.use(express.json());
+
+app.post("/api/chat", async (req, res) => {
+  const { messages } = req.body;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    res.status(400).json({ error: "Missing messages" });
+    return;
+  }
+
+  const creds = validateShroudEnvExpress(res);
+  if (!creds) return;
+  const { agentId, agentKey } = creds;
+
+  const headers: Record<string, string> = {
+    "X-Shroud-Agent-Key": \`\${agentId}:\${agentKey}\`,
+    "X-Shroud-Provider": shroudProvider,
+  };
+
+  if (billingMode === "provider_api_key") {
+    const vaultId = (process.env.ONECLAW_VAULT_ID || "").trim();
+    const vaultPath = (process.env.SHROUD_PROVIDER_VAULT_PATH || "").trim();
+    const inlineKey = (process.env.SHROUD_PROVIDER_API_KEY || "").trim();
+    if (vaultId && vaultPath) {
+      headers["X-Shroud-Api-Key"] = \`vault://\${vaultId}/\${vaultPath}\`;
+    } else if (inlineKey) {
+      headers["X-Shroud-Api-Key"] = inlineKey;
+    }
+  }
+
+  const openai = createOpenAI({
+    apiKey: agentKey || "shroud",
+    baseURL: shroudBaseURL,
+    headers,
+  });
+
+  const result = streamText({
+    model: openai(defaultModel),
+    system:
+      "You are an onchain AI agent assistant. Help users interact with smart contracts and manage their wallets.",
+    messages: convertToCoreMessages(messages),
+    onError({ error }) {
+      console.error("[api/chat] streamText error:", error);
+    },
+  });
+
+  result.pipeDataStreamToResponse(res);
+});
+
+app.listen(3001, () => console.log("API server on http://localhost:3001"));
+`;
+}
+
+function viteApiRouteVaultThirdParty(llm: ThirdPartyLlm): string {
+  return `import express from "express";
+import { convertToCoreMessages, streamText } from "ai";
 ${llmFactoryImport(llm)}
 import { createClient } from "@1claw/sdk";
 import "dotenv/config";
@@ -1242,10 +1949,34 @@ const client = createClient({
 let cachedKey = null;
 
 async function getLlmKey() {
-  if (!cachedKey) {
-    const { data } = await client.secrets.get(process.env.ONECLAW_VAULT_ID, "llm-api-key");
-    cachedKey = data.value;
+  if (cachedKey) return cachedKey;
+  const vaultId = (process.env.ONECLAW_VAULT_ID || "").trim();
+  const apiKey = (process.env.ONECLAW_API_KEY || "").trim();
+  if (!apiKey) {
+    throw new Error(
+      "ONECLAW_API_KEY is missing. Set it in .env so the server can read the vault.",
+    );
   }
+  if (!vaultId) {
+    throw new Error(
+      "ONECLAW_VAULT_ID is missing. Copy your vault id from 1claw.xyz into .env.",
+    );
+  }
+  const res = await client.secrets.get(vaultId, "llm-api-key");
+  if (res.error) {
+    throw new Error(
+      "1Claw vault read failed: " +
+        res.error.message +
+        ". Check ONECLAW_API_KEY and ONECLAW_VAULT_ID.",
+    );
+  }
+  const value = res.data?.value;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(
+      'No secret at vault path "llm-api-key". Add your LLM API key in the 1Claw dashboard, then restart the API server.',
+    );
+  }
+  cachedKey = value.trim();
   return cachedKey;
 }
 
@@ -1254,13 +1985,29 @@ app.use(express.json());
 
 app.post("/api/chat", async (req, res) => {
   const { messages } = req.body;
-  const key = await getLlmKey();
+  if (!Array.isArray(messages) || messages.length === 0) {
+    res.status(400).json({ error: "Missing messages" });
+    return;
+  }
+  let key;
+  try {
+    key = await getLlmKey();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[api/chat] getLlmKey:", msg);
+    res.status(502).json({ error: msg });
+    return;
+  }
   const provider = ${llmFactoryCall(llm)};
 
   const result = streamText({
     model: provider(${llmDefaultModel(llm)}),
-    system: "You are an onchain AI agent assistant. Help users interact with smart contracts and manage their wallets.",
-    messages,
+    system:
+      "You are an onchain AI agent assistant. Help users interact with smart contracts and manage their wallets.",
+    messages: convertToCoreMessages(messages),
+    onError({ error }) {
+      console.error("[api/chat] streamText error:", error);
+    },
   });
 
   result.pipeDataStreamToResponse(res);
@@ -1268,11 +2015,12 @@ app.post("/api/chat", async (req, res) => {
 
 app.listen(3001, () => console.log("API server on http://localhost:3001"));
 `;
-  }
+}
 
+function viteApiRouteDirectThirdParty(llm: ThirdPartyLlm): string {
   const envKey = llmEnvKey(llm);
   return `import express from "express";
-import { streamText } from "ai";
+import { convertToCoreMessages, streamText } from "ai";
 ${llmModelImport(llm)}
 import "dotenv/config";
 
@@ -1281,11 +2029,19 @@ app.use(express.json());
 
 app.post("/api/chat", async (req, res) => {
   const { messages } = req.body;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    res.status(400).json({ error: "Missing messages" });
+    return;
+  }
 
   const result = streamText({
     model: ${llmModelCall(llm)},
-    system: "You are an onchain AI agent assistant. Help users interact with smart contracts and manage their wallets.",
-    messages,
+    system:
+      "You are an onchain AI agent assistant. Help users interact with smart contracts and manage their wallets.",
+    messages: convertToCoreMessages(messages),
+    onError({ error }) {
+      console.error("[api/chat] streamText error:", error);
+    },
   });
 
   result.pipeDataStreamToResponse(res);
@@ -1293,6 +2049,24 @@ app.post("/api/chat", async (req, res) => {
 
 app.listen(3001, () => console.log("API server on http://localhost:3001${envKey ? ` (needs ${envKey})` : ""}"));
 `;
+}
+
+function viteApiRoute(
+  llm: LlmProvider,
+  secretsMode: SecretsMode,
+  shroudUpstream?: ShroudUpstreamProvider,
+  shroudBillingMode?: ShroudBillingMode,
+): string {
+  if (llm === "oneclaw") {
+    return viteApiRouteOneClawShroud(
+      shroudUpstream ?? "openai",
+      shroudBillingMode ?? "token_billing",
+    );
+  }
+  if (useVaultForSecrets(secretsMode)) {
+    return viteApiRouteVaultThirdParty(llm);
+  }
+  return viteApiRouteDirectThirdParty(llm);
 }
 
 function scaffoldVite(root: string, config: ScaffoldConfig) {
@@ -1442,15 +2216,26 @@ createRoot(document.getElementById("root")!).render(<App />);
 `,
   );
 
-  // Vite chat page (no "use client" directive, same UI)
-  const viteChatPage = chatPageContent(config.projectName).replace('"use client";\n\n', "");
+  // Vite chat page (no "use client" or Next-only /debug link)
+  const viteChatPage = chatPageContent(config.projectName, {
+    debugLink: false,
+  }).replace('"use client";\n\n', "");
   const viteApp = viteChatPage
     .replace("export default function Home()", "export function App()")
     .replace(/@\/components/g, "@/components")
     .replace(/@\/lib/g, "@/lib");
 
   file(pkg, "src/App.tsx", viteApp);
-  file(pkg, "server.mjs", viteApiRoute(config.llm, config.secrets.mode));
+  file(
+    pkg,
+    "server.mjs",
+    viteApiRoute(
+      config.llm,
+      config.secrets.mode,
+      config.shroudUpstream,
+      config.shroudBillingMode,
+    ),
+  );
 
   file(
     pkg,

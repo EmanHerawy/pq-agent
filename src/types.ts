@@ -3,6 +3,19 @@ export type ChainFramework = "foundry" | "hardhat" | "none";
 export type AppFramework = "nextjs" | "vite" | "python";
 export type LlmProvider = "oneclaw" | "gemini" | "openai" | "anthropic";
 
+/** Upstream LLM Shroud proxies to — see https://docs.1claw.xyz/docs/guides/shroud */
+export type ShroudUpstreamProvider =
+  | "openai"
+  | "anthropic"
+  | "google"
+  | "gemini"
+  | "mistral"
+  | "cohere"
+  | "openrouter";
+
+/** How Shroud pays upstream LLM providers — user-declared during setup */
+export type ShroudBillingMode = "token_billing" | "provider_api_key";
+
 export interface SecretsConfig {
   mode: SecretsMode;
   apiKey?: string;
@@ -38,5 +51,9 @@ export interface ScaffoldConfig {
   chain: ChainFramework;
   framework: AppFramework;
   llm: LlmProvider;
+  /** Set when llm === "oneclaw" — Shroud X-Shroud-Provider header */
+  shroudUpstream?: ShroudUpstreamProvider;
+  /** Set when llm === "oneclaw" — Token Billing vs own key in vault / .env */
+  shroudBillingMode?: ShroudBillingMode;
   oneClawVaultId?: string;
 }

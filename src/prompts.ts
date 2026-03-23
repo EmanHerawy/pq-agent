@@ -5,7 +5,21 @@ import type {
   ChainFramework,
   AppFramework,
   LlmProvider,
+  ShroudBillingMode,
+  ShroudUpstreamProvider,
 } from "./types.js";
+import { shroudProviderVaultKeyPath } from "./shroud-paths.js";
+
+function llmVendorLabel(llm: Exclude<LlmProvider, "oneclaw">): string {
+  switch (llm) {
+    case "gemini":
+      return "Google Gemini";
+    case "openai":
+      return "OpenAI";
+    case "anthropic":
+      return "Anthropic";
+  }
+}
 
 export async function promptProjectName(): Promise<string> {
   return input({
@@ -67,7 +81,8 @@ export async function promptSecrets(): Promise<SecretsConfig> {
 
   if (mode === "oneclaw" || mode === "encrypted") {
     config.envPassword = await password({
-      message: "Set a password to encrypt your .env file:",
+      message:
+        "Set a password to encrypt secrets (API keys & private keys → .env.secrets.encrypted):",
       mask: "*",
       validate: (val) => {
         if (val.length < 6) return "Password must be at least 6 characters";
@@ -112,10 +127,10 @@ export async function promptLlmProvider(
     choices: [
       {
         value: "oneclaw" as const,
-        name: "1Claw [Recommended]",
+        name: "1Claw (Shroud) [Recommended]",
         description: useOneClaw
-          ? "LLM key stored in your 1Claw vault — never in code"
-          : "HSM-backed secret proxy for LLM calls",
+          ? "1Claw Shroud LLM proxy — any upstream provider; billing or vault keys"
+          : "Shroud at shroud.1claw.xyz — set agent credentials in .env",
       },
       {
         value: "gemini" as const,
@@ -131,6 +146,192 @@ export async function promptLlmProvider(
         value: "anthropic" as const,
         name: "Anthropic",
         description: "Claude models (ANTHROPIC_API_KEY)",
+      },
+    ],
+  });
+}
+
+/** Gemini / OpenAI / Anthropic only. Skipped when LLM is 1Claw. */
+export async function promptThirdPartyLlmApiKey(
+  llm: LlmProvider,
+  secretsMode: SecretsMode,
+): Promise<string | undefined> {
+  if (llm === "oneclaw") return undefined;
+
+  const label = llmVendorLabel(llm);
+
+  const addNow = await select<"now" | "later">({
+    message:
+      secretsMode === "oneclaw"
+        ? `Add your ${label} API key now? (saved in 1Claw vault as llm-api-key)`
+        : `Add your ${label} API key to .env now?`,
+    choices: [
+      { value: "now" as const, name: "Enter key now" },
+      { value: "later" as const, name: "Add later" },
+    ],
+  });
+
+  if (addNow !== "now") return undefined;
+
+  return password({
+    message: `${label} API key:`,
+    mask: "*",
+    validate: (val) => {
+      if (!val.trim()) return "API key cannot be empty";
+      return true;
+    },
+  });
+}
+
+/**
+ * Shroud requires ONECLAW_AGENT_ID + ONECLAW_AGENT_API_KEY (agent_id:api_key).
+ * When not using 1Claw vault, prompt to add them to .env.
+ */
+export async function promptShroudAgentCredentialsWhenNeeded(
+  llm: LlmProvider,
+  secretsMode: SecretsMode,
+): Promise<{ agentId?: string; agentApiKey?: string }> {
+  if (llm !== "oneclaw" || secretsMode === "oneclaw") return {};
+
+  const addNow = await select<"now" | "later">({
+    message:
+      "Add Shroud agent credentials to .env now? (ONECLAW_AGENT_ID + ONECLAW_AGENT_API_KEY)",
+    choices: [
+      { value: "now" as const, name: "Enter now" },
+      { value: "later" as const, name: "Add later" },
+    ],
+  });
+
+  if (addNow !== "now") return {};
+
+  const uuidRe =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const agentId = await input({
+    message:
+      "ONECLAW_AGENT_ID (1Claw agent UUID with dashes — NOT your AGENT_ADDRESS / 0x wallet):",
+    validate: (val) => {
+      const t = val.trim();
+      if (!t) return "Required";
+      if (/^0x[0-9a-fA-F]{40}$/.test(t) || /^0x[0-9a-fA-F]{64}$/.test(t)) {
+        return "That looks like an Ethereum address — use the 1Claw agent UUID from the dashboard";
+      }
+      if (!uuidRe.test(t)) {
+        return "Must be a UUID like 550e8400-e29b-41d4-a716-446655440000";
+      }
+      return true;
+    },
+  });
+
+  const agentApiKey = await password({
+    message: "ONECLAW_AGENT_API_KEY (ocv_...):",
+    mask: "*",
+    validate: (val) => (val.trim() ? true : "Required"),
+  });
+
+  return { agentId: agentId.trim(), agentApiKey };
+}
+
+/**
+ * User must know whether LLM Token Billing is enabled on 1claw.xyz for this agent.
+ * We cannot detect it via API here — this is an explicit choice.
+ */
+export async function promptShroudBillingMode(): Promise<ShroudBillingMode> {
+  return select<ShroudBillingMode>({
+    message: "How will Shroud pay the upstream LLM?",
+    choices: [
+      {
+        value: "token_billing" as const,
+        name: "1Claw LLM Token Billing",
+        description:
+          "Billing on 1claw.xyz — no provider API key in vault or .env",
+      },
+      {
+        value: "provider_api_key" as const,
+        name: "My own provider API key",
+        description:
+          "Store in 1Claw vault (api-keys/…) or .env — required if Token Billing is off",
+      },
+    ],
+  });
+}
+
+/** After BYOK + 1Claw vault: prompt to save key at api-keys/{upstream}. */
+export async function promptShroudVaultProviderApiKey(
+  upstream: ShroudUpstreamProvider,
+): Promise<string | undefined> {
+  const path = shroudProviderVaultKeyPath(upstream);
+  const addNow = await select<"now" | "later">({
+    message: `Store your ${upstream} API key in 1Claw now? (vault path: ${path})`,
+    choices: [
+      { value: "now" as const, name: "Enter key now" },
+      { value: "later" as const, name: "Add later in dashboard" },
+    ],
+  });
+  if (addNow !== "now") return undefined;
+  return password({
+    message: `${upstream} API key (for Shroud upstream):`,
+    mask: "*",
+    validate: (val) => (val.trim() ? true : "API key cannot be empty"),
+  });
+}
+
+/** BYOK without 1Claw vault: key goes in .env for X-Shroud-Api-Key. */
+export async function promptShroudProviderApiKeyForEnv(): Promise<
+  string | undefined
+> {
+  const addNow = await select<"now" | "later">({
+    message:
+      "Add provider API key to .env now? (sent as X-Shroud-Api-Key to Shroud)",
+    choices: [
+      { value: "now" as const, name: "Enter key now" },
+      { value: "later" as const, name: "Add later" },
+    ],
+  });
+  if (addNow !== "now") return undefined;
+  return password({
+    message: "Provider API key (SHROUD_PROVIDER_API_KEY):",
+    mask: "*",
+    validate: (val) => (val.trim() ? true : "API key cannot be empty"),
+  });
+}
+
+/** Which upstream LLM Shroud forwards to — see https://docs.1claw.xyz/docs/guides/shroud */
+export async function promptShroudUpstreamProvider(): Promise<ShroudUpstreamProvider> {
+  return select<ShroudUpstreamProvider>({
+    message: "Shroud upstream provider? (1Claw proxies to this LLM)",
+    choices: [
+      {
+        value: "openai" as const,
+        name: "OpenAI",
+        description: "GPT models — BYOK vault path api-keys/openai or Token Billing",
+      },
+      {
+        value: "google" as const,
+        name: "Google (Gemini)",
+        description: "Gemini — use X-Shroud-Provider: google or gemini",
+      },
+      {
+        value: "gemini" as const,
+        name: "Gemini (alias)",
+        description: "Same as Google per 1Claw docs",
+      },
+      {
+        value: "anthropic" as const,
+        name: "Anthropic",
+        description: "Claude — BYOK vault path api-keys/anthropic or Token Billing",
+      },
+      {
+        value: "mistral" as const,
+        name: "Mistral",
+      },
+      {
+        value: "cohere" as const,
+        name: "Cohere",
+      },
+      {
+        value: "openrouter" as const,
+        name: "OpenRouter",
+        description: "Many models with one key",
       },
     ],
   });
