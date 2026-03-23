@@ -4,10 +4,26 @@ Interactive CLI to scaffold monorepo projects for onchain AI agents.
 
 ## Basic flow
 
-1. **Scaffold** — Run `npx scaffold-agent@latest` and complete the wizard (project name, secrets mode, optional agent wallet, LLM provider, Foundry/Hardhat/none, Next.js / Vite / Python). The CLI writes the monorepo and runs **`npm install`** at the repo root unless you set **`SCAFFOLD_SKIP_NPM_INSTALL=1`**.
-2. **Contracts (if you picked a chain)** — In one terminal: **`just chain`**. Then **`just fund`** (local ETH to deployer + optional agent) and **`just deploy`** (compile, deploy, generate ABI types). Auto-fund during scaffold only works if a node is already on **`RPC_URL`** (default `http://127.0.0.1:8545`); otherwise fund after you start the chain. Use **`SCAFFOLD_SKIP_AUTO_FUND=1`** to skip funding during scaffold.
-3. **Network & env** — Set **`targetNetwork`** (and optional **`rpcOverrides`**) in **`scaffold.config.ts`**. Put non-secrets in repo-root **`.env`**; use **`just enc`** / 1Claw vault for keys when using encrypted or vault modes.
-4. **Run the app** — **`just start`** (Next.js, Vite, or Python agent, depending on what you chose). Use **`just accounts`**, **`just balances`**, and **`/identity`** / **`/balances`** in the web apps as needed.
+1. Scaffold out an AI Agent
+
+`npx scaffold-agent@latest`
+
+2. Start your frontend
+   `cd <your_project>`
+
+then...
+`just start`
+
+3. Start your chain (In a new windows)
+   `just chain`
+
+4. Fund your deployer (In a new window)
+   `just fund`
+
+5. Deploy your smart contract
+   `just deploy`
+
+Checkout the application by navigating to http://localhost:3000
 
 ## Usage
 
@@ -69,19 +85,19 @@ my-agent/
 
 ### Commands (via [just](https://just.systems))
 
-| Command         | Description                                                                       |
-| --------------- | --------------------------------------------------------------------------------- |
-| `just chain`    | Start local blockchain (Foundry/Hardhat)                                          |
-| `just fund`     | Fund `DEPLOYER_ADDRESS` + optional `AGENT_ADDRESS` (100 ETH each from account #0) |
-| `just deploy`   | Deploy contracts & auto-gen ABIs (prompts for secrets password if encrypted)      |
-| `just start`    | Start frontend or agent (same)                                                    |
-| `just accounts` | Show QR codes for `DEPLOYER_ADDRESS` + agent address (repo-root `.env`)        |
-| `just balances` | Native balance on all chains in `network-definitions` (deployer + agent; `rpcOverrides`) |
-| `just generate` | Generate deployer wallet (password prompt if encrypted)                           |
-| `just env KEY VALUE` | Upsert repo-root `.env` (e.g. **`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`**) |
-| `just enc KEY VALUE` | Update **`.env.secrets.encrypted`** (password prompt) |
-| `just vault PATH VALUE` | Store a secret in the **1Claw vault** (wraps `with-secrets`) |
-| `just reown PROJECT_ID` | WalletConnect Cloud id → `.env` (Next: `NEXT_PUBLIC_…`, Vite: `VITE_…`) |
+| Command                 | Description                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| `just chain`            | Start local blockchain (Foundry/Hardhat)                                                 |
+| `just fund`             | Fund `DEPLOYER_ADDRESS` + optional `AGENT_ADDRESS` (100 ETH each from account #0)        |
+| `just deploy`           | Deploy contracts & auto-gen ABIs (prompts for secrets password if encrypted)             |
+| `just start`            | Start frontend or agent (same)                                                           |
+| `just accounts`         | Show QR codes for `DEPLOYER_ADDRESS` + agent address (repo-root `.env`)                  |
+| `just balances`         | Native balance on all chains in `network-definitions` (deployer + agent; `rpcOverrides`) |
+| `just generate`         | Generate deployer wallet (password prompt if encrypted)                                  |
+| `just env KEY VALUE`    | Upsert repo-root `.env` (e.g. **`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`**)                |
+| `just enc KEY VALUE`    | Update **`.env.secrets.encrypted`** (password prompt)                                    |
+| `just vault PATH VALUE` | Store a secret in the **1Claw vault** (wraps `with-secrets`)                             |
+| `just reown PROJECT_ID` | WalletConnect Cloud id → `.env` (Next: `NEXT_PUBLIC_…`, Vite: `VITE_…`)                  |
 
 ### ABI type generation
 
