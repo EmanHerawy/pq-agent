@@ -115,6 +115,25 @@ npm run dev         # watch mode
 npm start           # run locally
 ```
 
+## Publishing to npm
+
+Package name: **`scaffold-agent`** (public registry). After the first publish: [npmjs.com/package/scaffold-agent](https://www.npmjs.com/package/scaffold-agent).
+
+**Manual publish** (one-time: `npm login`):
+
+```bash
+npm run build
+npm publish --access public
+```
+
+**CI publish:** add an npm **Automation** token as the GitHub repo secret **`NPM_TOKEN`**, then create a **GitHub Release** (or run the **Publish to npm** workflow manually). The workflow runs `npm ci`, `npm run build` (via `prepublishOnly`), and `npm publish --provenance`.
+
+After publish, users install with:
+
+```bash
+npx scaffold-agent@latest
+```
+
 ## License
 
 [MIT](LICENSE) — see `LICENSE` in the repo.

@@ -3,11 +3,22 @@
   "version": "0.1.0",
   "description": "Interactive CLI to scaffold monorepo projects for onchain AI agents",
   "type": "module",
+  "author": "1clawAI (https://1claw.xyz)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1clawAI/scaffold-agent.git"
+  },
+  "bugs": {
+    "url": "https://github.com/1clawAI/scaffold-agent/issues"
+  },
+  "homepage": "https://github.com/1clawAI/scaffold-agent#readme",
   "bin": {
-    "scaffold-agent": "./dist/cli.js"
+    "scaffold-agent": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",
@@ -21,7 +32,12 @@
     "ai-agent",
     "onchain",
     "cli",
-    "monorepo"
+    "monorepo",
+    "1claw",
+    "foundry",
+    "hardhat",
+    "nextjs",
+    "shroud"
   ],
   "license": "MIT",
   "dependencies": {
