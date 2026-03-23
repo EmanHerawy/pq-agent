@@ -25,7 +25,7 @@ jobs:
 
       - run: npm ci
 
-      # --tag latest explicit; scoped package @1claw/scaffold-agent → npx @1claw/scaffold-agent@latest
+      # prepublishOnly runs `npm run build`
       - run: npm publish --provenance --access public --tag latest
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

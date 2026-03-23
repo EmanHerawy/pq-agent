@@ -4,13 +4,13 @@ Interactive CLI to scaffold monorepo projects for onchain AI agents.
 
 ## Usage
 
-Published under the **[@1claw](https://www.npmjs.com/org/1claw)** org as **`@1claw/scaffold-agent`**. The installed CLI binary is **`scaffold-agent`**. Publishes use the **`latest`** dist-tag:
+Published on npm as [**`scaffold-agent`**](https://www.npmjs.com/package/scaffold-agent). The CLI binary is also **`scaffold-agent`**.
 
 ```bash
-npx @1claw/scaffold-agent@latest
+npx scaffold-agent@latest
 ```
 
-(`@latest` is the default dist-tag — you can omit it. Use the scoped package name so npm resolves the 1claw org package, not an unrelated unscoped name.)
+(`@latest` is the default dist-tag — you can omit it.)
 
 **CLI flags:** `scaffold-agent --version` / `-V`, `scaffold-agent --help` / `-h`. Unknown `-…` options exit with an error.
 
@@ -123,25 +123,19 @@ npm start           # run locally
 
 ## Publishing to npm
 
-Package name: **`@1claw/scaffold-agent`** (public scoped package — appears under [1claw → Packages](https://www.npmjs.com/settings/1claw/packages)). Registry listing: [npmjs.com/package/@1claw/scaffold-agent](https://www.npmjs.com/package/@1claw/scaffold-agent).
+Package name: **`scaffold-agent`** (unscoped). Listing: [npmjs.com/package/scaffold-agent](https://www.npmjs.com/package/scaffold-agent).
 
-**Manual publish** — use an npm user with **publish** access to **`@1claw`**, then:
+**Manual publish** — any npm user with rights to the **`scaffold-agent`** package name:
 
 ```bash
 npm login
 npm run build
-npm publish --access public --tag latest
+npm publish --tag latest
 ```
 
-Scoped packages **must** use `--access public` the first time (also set in `publishConfig`).
+**CI publish:** add an npm **Automation** token as **`NPM_TOKEN`**, then create a **GitHub Release** or run **Publish to npm**. The workflow runs `npm publish --provenance --access public --tag latest`.
 
-**CI publish:** add an npm **Automation** token for a maintainer with **`@1claw`** publish rights as **`NPM_TOKEN`**, then create a **GitHub Release** or run **Publish to npm**. The workflow runs `npm publish --provenance --access public --tag latest`.
-
-After publish, users run:
-
-```bash
-npx @1claw/scaffold-agent@latest
-```
+If you previously published **`@1claw/scaffold-agent`**, deprecate that package on npm (`npm deprecate @1claw/scaffold-agent@"< version" "Use scaffold-agent instead"`) so users migrate to the single package.
 
 ## License
 
