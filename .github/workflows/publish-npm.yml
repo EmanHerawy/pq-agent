@@ -25,6 +25,7 @@ jobs:
 
       - run: npm ci
 
-      - run: npm publish --provenance --access public
+      # --tag latest is npm default; explicit so npx scaffold-agent@latest always matches this publish
+      - run: npm publish --provenance --access public --tag latest
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

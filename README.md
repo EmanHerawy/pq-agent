@@ -4,9 +4,13 @@ Interactive CLI to scaffold monorepo projects for onchain AI agents.
 
 ## Usage
 
+The npm package name and CLI binary are both **`scaffold-agent`**. Publishes use the **`latest`** dist-tag, so this always runs the current stable release:
+
 ```bash
 npx scaffold-agent@latest
 ```
+
+(`npx scaffold-agent` is equivalent — `latest` is the default.)
 
 The wizard walks through:
 
@@ -123,10 +127,10 @@ Package name: **`scaffold-agent`** (public registry). After the first publish: [
 
 ```bash
 npm run build
-npm publish --access public
+npm publish --access public --tag latest
 ```
 
-**CI publish:** add an npm **Automation** token as the GitHub repo secret **`NPM_TOKEN`**, then create a **GitHub Release** (or run the **Publish to npm** workflow manually). The workflow runs `npm ci`, `npm run build` (via `prepublishOnly`), and `npm publish --provenance`.
+**CI publish:** add an npm **Automation** token as the GitHub repo secret **`NPM_TOKEN`**, then create a **GitHub Release** (or run the **Publish to npm** workflow manually). The workflow runs `npm ci`, `npm run build` (via `prepublishOnly`), and `npm publish --provenance --tag latest` so **`npx scaffold-agent@latest`** tracks those releases.
 
 After publish, users install with:
 

@@ -12,6 +12,10 @@
     "url": "https://github.com/1clawAI/scaffold-agent/issues"
   },
   "homepage": "https://github.com/1clawAI/scaffold-agent#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "bin": {
     "scaffold-agent": "dist/cli.js"
   },
