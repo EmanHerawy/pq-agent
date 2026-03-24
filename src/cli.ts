@@ -8,6 +8,7 @@ import {
   promptProjectName,
   promptSecrets,
   promptIdentity,
+  promptInstallAmpersendSdk,
   promptLlmProvider,
   promptThirdPartyLlmApiKey,
   promptShroudUpstreamProvider,
@@ -64,13 +65,17 @@ function printHelp(): void {
 ${desc}
 
 Usage:
-  scaffold-agent [options]
+  scaffold-agent [options] [project-name]
 
 Options:
   -h, --help       Show this help message
   -V, --version    Print the package version
 
-With no options, starts the interactive wizard.
+Arguments:
+  project-name     Create the project in this folder (skips the "Project name" prompt).
+                   Example: npx scaffold-agent@latest my-agent
+
+With no arguments (except optional project-name), starts the interactive wizard.
 
 Environment:
   SCAFFOLD_SKIP_NPM_INSTALL=1   Skip automatic npm install at the end
@@ -79,10 +84,11 @@ Environment:
 }
 
 /**
- * Handle global flags (--help, --version) and reject unknown options.
- * Positional args are reserved for future use and currently ignored.
+ * Parse argv: flags, optional project name, reject unknown options.
+ * Returns the first positional argument as the project directory name, if any.
  */
-function handleGlobalCliArgs(argv: string[]): void {
+function parseCli(argv: string[]): { projectNameFromCli?: string } {
+  const positionals: string[] = [];
   for (const arg of argv) {
     if (arg === "-h" || arg === "--help") {
       printHelp();
@@ -96,7 +102,10 @@ function handleGlobalCliArgs(argv: string[]): void {
       console.error(`Unknown option: ${arg}\nRun scaffold-agent --help for usage.`);
       process.exit(1);
     }
+    positionals.push(arg);
   }
+  const first = positionals[0]?.trim();
+  return { projectNameFromCli: first || undefined };
 }
 
 /** Written into generated `.env` when LLM = 1Claw (Shroud). */
@@ -160,12 +169,30 @@ function llmEnvKeyName(llm: LlmProvider): string | null {
 }
 
 async function main() {
-  handleGlobalCliArgs(process.argv.slice(2));
+  const { projectNameFromCli } = parseCli(process.argv.slice(2));
 
   showBanner();
 
   // ── Project name ──────────────────────────────────────────────────────
-  const projectName = await promptProjectName();
+  let projectName: string;
+  if (projectNameFromCli !== undefined) {
+    const t = projectNameFromCli.trim();
+    if (!t) {
+      console.log(chalk.red('\n  Project name cannot be empty.\n'));
+      process.exit(1);
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(t)) {
+      console.log(
+        chalk.red(
+          `\n  Invalid project name "${t}". Use letters, numbers, hyphens, or underscores only.\n`,
+        ),
+      );
+      process.exit(1);
+    }
+    projectName = t;
+  } else {
+    projectName = await promptProjectName();
+  }
   const projectDir = join(process.cwd(), projectName);
 
   if (existsSync(projectDir)) {
@@ -184,6 +211,14 @@ async function main() {
   // ── Identity ──────────────────────────────────────────────────────────
   section("Agent Identity");
   const generateAgent = await promptIdentity(secrets.mode === "oneclaw");
+
+  section("Ampersend (x402 / payments)");
+  const installAmpersendSdk = await promptInstallAmpersendSdk();
+  if (installAmpersendSdk) {
+    info("Docs:     https://docs.ampersend.ai/");
+    info("npm:      https://www.npmjs.com/package/@ampersend_ai/ampersend-sdk");
+    info("GitHub:   https://github.com/edgeandnode/ampersend-sdk");
+  }
 
   // ── LLM Provider ──────────────────────────────────────────────────────
   section("LLM Provider");
@@ -361,6 +396,7 @@ async function main() {
       agentAddress: agent?.address,
       agentPrivateKey: agent?.privateKey,
     },
+    installAmpersendSdk,
     deployer: { address: deployer.address, privateKey: deployer.privateKey },
     chain,
     framework,

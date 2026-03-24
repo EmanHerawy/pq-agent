@@ -47,6 +47,8 @@ export interface ScaffoldConfig {
   projectName: string;
   secrets: SecretsConfig;
   identity: IdentityConfig;
+  /** Add @ampersend_ai/ampersend-sdk (Next/Vite) + AMPERSEND.md; see https://docs.ampersend.ai */
+  installAmpersendSdk: boolean;
   deployer: DeployerConfig;
   chain: ChainFramework;
   framework: AppFramework;

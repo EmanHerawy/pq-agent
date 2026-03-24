@@ -10,6 +10,8 @@ Typical path when you picked **Foundry** or **Hardhat** and want a **local** nod
 
    ```bash
    npx scaffold-agent@latest
+   # or create `my-agent/` directly (skips the project name prompt):
+   npx scaffold-agent@latest my-agent
    ```
 
 2. **Enter the project** (replace `my-agent` with the folder name you chose)
@@ -52,22 +54,24 @@ Published on npm as [**`scaffold-agent`**](https://www.npmjs.com/package/scaffol
 
 ```bash
 npx scaffold-agent@latest
+npx scaffold-agent@latest my-agent   # creates ./my-agent (skips project name prompt)
 ```
 
 (`@latest` is the default dist-tag — you can omit it.)
 
-**CLI flags:** `scaffold-agent --version` / `-V`, `scaffold-agent --help` / `-h`. Unknown `-…` options exit with an error.
+**CLI flags:** `scaffold-agent --version` / `-V`, `scaffold-agent --help` / `-h`. Unknown `-…` options exit with an error. **Optional argument:** `project-name` — directory to create (same rules as the interactive prompt: letters, numbers, `-`, `_`).
 
 After the project is written, the CLI runs **`npm install`** at the **monorepo root** (workspaces install all packages). Set **`SCAFFOLD_SKIP_NPM_INSTALL=1`** to skip (e.g. offline or you use another package manager).
 
 The wizard walks through:
 
-1. **Project name** — directory to create
+1. **Project name** — directory to create (skipped if you pass it as the first argument, e.g. `scaffold-agent my-agent`)
 2. **Secrets management** — 1Claw (HSM-backed vault), encrypted secrets file, or plain `.env`
 3. **Agent identity** — generate an Ethereum wallet for your agent
-4. **LLM Provider** — 1Claw, Gemini, OpenAI, or Anthropic
-5. **Chain framework** — Foundry, Hardhat, or none
-6. **App framework** — Next.js, Vite, or Python (Google A2A)
+4. **Ampersend SDK** — optional; adds [`@ampersend_ai/ampersend-sdk`](https://www.npmjs.com/package/@ampersend_ai/ampersend-sdk) + **`AMPERSEND.md`** ([docs.ampersend.ai](https://docs.ampersend.ai/), [GitHub](https://github.com/edgeandnode/ampersend-sdk))
+5. **LLM Provider** — 1Claw, Gemini, OpenAI, or Anthropic
+6. **Chain framework** — Foundry, Hardhat, or none
+7. **App framework** — Next.js, Vite, or Python (Google A2A)
 
 At the end it displays QR codes for the Deployer and Agent addresses. If you picked a chain, the CLI also runs **`scripts/fund-deployer.mjs`** (same as **`just fund`**). **Order matters:** auto-fund only succeeds if a node is **already** listening on **`RPC_URL`** (default **`http://127.0.0.1:8545`**). Most people run **`just chain` first**, then scaffold in another terminal—or run **`just fund`** after **`cd` into the project**. Set **`SCAFFOLD_SKIP_AUTO_FUND=1`** to skip. **`just generate`** tries the same auto-fund when you create a deployer.
 

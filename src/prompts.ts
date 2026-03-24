@@ -123,6 +123,22 @@ export async function promptIdentity(useOneClaw: boolean): Promise<boolean> {
   });
 }
 
+/** Optional [ampersend](https://docs.ampersend.ai/) SDK for x402 / A2A / MCP payment tooling. */
+export async function promptInstallAmpersendSdk(): Promise<boolean> {
+  return select<boolean>({
+    message: "Install ampersend SDK?",
+    choices: [
+      {
+        value: true,
+        name: "Yes",
+        description:
+          "Add @ampersend_ai/ampersend-sdk + AMPERSEND.md (x402 payments, A2A, MCP)",
+      },
+      { value: false, name: "No" },
+    ],
+  });
+}
+
 /**
  * After `ampersend setup start` / approval / `setup finish` — smart account + session key.
  * Returns undefined if user defers.
