@@ -2550,6 +2550,7 @@ function scaffoldNextJS(root: string, config: ScaffoldConfig) {
   dir(pkg, "app", "api", "faucet");
   dir(pkg, "app", "debug");
   dir(pkg, "app", "identity");
+  dir(pkg, "app", "ens");
   dir(pkg, "app", "balances");
   dir(pkg, "components", "ui");
   dir(pkg, "lib");
