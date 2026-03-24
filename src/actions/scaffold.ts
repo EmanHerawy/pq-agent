@@ -2536,6 +2536,7 @@ function scaffoldNextJS(root: string, config: ScaffoldConfig) {
   dir(pkg, "app", "api", "chat");
   dir(pkg, "app", "api", "agent0", "lookup");
   dir(pkg, "app", "api", "balances");
+  dir(pkg, "app", "api", "faucet");
   dir(pkg, "app", "debug");
   dir(pkg, "app", "identity");
   dir(pkg, "app", "balances");
