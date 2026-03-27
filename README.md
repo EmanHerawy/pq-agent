@@ -72,13 +72,15 @@ npx scaffold-agent@latest my-agent   # creates ./my-agent (skips project name pr
 
 **Non-interactive / automation:** **`--non-interactive`** / **`-y`** runs with no prompts. Set **`--env-password`** when **`--secrets`** is **`oneclaw`** or **`encrypted`** (min 6 characters). Omitted choices use documented defaults in **`--help`** (e.g. Foundry + Next.js + 1Claw Shroud token billing). Use **`--skip-npm-install`** and **`--skip-auto-fund`** to match the env vars below.
 
+**Config file:** **`--from-config agent.json`** merges JSON into the wizard (CLI flags **override** the file). Use **`--dump-config`** or **`--dump-config-out <file>`** to print or save that shape; secret values are **omitted** from the dump. **`--swarm <n>`** (1–64) generates multiple agent wallets; Next/Vite apps get a public **`agents.json`** roster, header agent picker, and **`/swarm`** page. Details: **`AGENTS.md`**.
+
 After the project is written, the CLI runs **`npm install`** at the **monorepo root** (workspaces install all packages). Set **`SCAFFOLD_SKIP_NPM_INSTALL=1`** or **`--skip-npm-install`** to skip (e.g. offline or you use another package manager).
 
 The wizard walks through:
 
 1. **Project name** — directory to create (skipped if you pass it as the first argument, e.g. `scaffold-agent my-agent`)
 2. **Secrets management** — 1Claw (HSM-backed vault), encrypted secrets file, or plain `.env`
-3. **Agent identity** — generate an Ethereum wallet for your agent
+3. **Agent identity** — generate one or more Ethereum wallets (**`--swarm`** for many)
 4. **Ampersend SDK** — optional; adds [`@ampersend_ai/ampersend-sdk`](https://www.npmjs.com/package/@ampersend_ai/ampersend-sdk) + **`AMPERSEND.md`** ([docs.ampersend.ai](https://docs.ampersend.ai/), [GitHub](https://github.com/edgeandnode/ampersend-sdk))
 5. **LLM Provider** — 1Claw, Gemini, OpenAI, or Anthropic
 6. **Chain framework** — Foundry, Hardhat, or none
@@ -98,13 +100,16 @@ my-agent/
 │   ├── deploy-foundry.mjs        # or deploy-hardhat.mjs
 │   ├── generate-abi-types.mjs    # auto-gen TypeScript from contract ABIs
 │   ├── generate-deployer.mjs     # create deployer wallet if missing (+ auto-fund if RPC up)
-│   └── fund-deployer.mjs         # fund DEPLOYER + optional AGENT from local acct #0
+│   ├── fund-deployer.mjs         # fund deployer + agents (incl. swarm roster in public/agents.json)
+│   └── swarm-agents.mjs          # just swarm — append wallets (Next/Vite)
 ├── packages/
 │   ├── foundry/                  # or hardhat/ (Solidity contracts)
 │   └── nextjs/                   # or vite/ or python/ (frontend / agent)
+│       ├── public/agents.json    # swarm roster (addresses only; Next/Vite)
 │       ├── app/
 │       │   ├── page.tsx          # shadcn chat UI
 │       │   ├── identity/page.tsx # ERC-8004 / Agent0 identity + register
+│       │   ├── swarm/page.tsx   # swarm list + local keygen hints
 │       │   ├── debug/page.tsx    # deployed contracts (Next only)
 │       │   └── api/
 │       │       ├── chat/route.ts # LLM streaming API
@@ -124,12 +129,13 @@ my-agent/
 | Command                 | Description                                                                              |
 | ----------------------- | ---------------------------------------------------------------------------------------- |
 | `just chain`            | Start local blockchain (Foundry/Hardhat)                                                 |
-| `just fund`             | Fund `DEPLOYER_ADDRESS` + optional `AGENT_ADDRESS` (100 ETH each from account #0)        |
+| `just fund`             | Fund `DEPLOYER_ADDRESS`, `AGENT_ADDRESS`, and swarm addresses in `packages/*/public/agents.json` (100 ETH each from account #0) |
 | `just deploy`           | Deploy contracts & auto-gen ABIs (prompts for secrets password if encrypted)             |
 | `just start`            | Start frontend or agent (same)                                                           |
 | `just accounts`         | Show QR codes for `DEPLOYER_ADDRESS` + agent address (repo-root `.env`)                  |
 | `just balances`         | Native balance on all chains in `network-definitions` (deployer + agent; `rpcOverrides`) |
 | `just generate`         | Generate deployer wallet (password prompt if encrypted)                                  |
+| `just swarm agents=N`   | Add **N** swarm wallets (`public/agents.json` + `SWARM_AGENT_KEYS_JSON`; Next/Vite; default `agents=1`) |
 | `just env KEY VALUE`    | Upsert repo-root `.env` (e.g. **`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`**)                |
 | `just enc KEY VALUE`    | Update **`.env.secrets.encrypted`** (password prompt)                                    |
 | `just vault PATH VALUE` | Store a secret in the **1Claw vault** (wraps `with-secrets`)                             |
@@ -146,9 +152,9 @@ type-safe contract addresses and ABIs in your frontend code.
 
 ### Route loading & frontend performance
 
-**Next.js:** `app/loading.tsx` plus per-route `loading.tsx` under **`/identity`**, **`/balances`**, **`/debug`**, **`/ens`** show a **header + card skeleton** as soon as you navigate, while the route’s JavaScript loads (especially noticeable in dev). **`npm run dev`** uses **`next dev --turbo`**. **`next.config.js`** sets **`experimental.optimizePackageImports: ["lucide-react"]`** so icon imports tree-shake instead of pulling the whole package. Wagmi’s React Query client uses **30s `staleTime`** to reduce background refetching.
+**Next.js:** `app/loading.tsx` plus per-route `loading.tsx` under **`/identity`**, **`/balances`**, **`/debug`**, **`/ens`**, **`/swarm`** show a **header + card skeleton** as soon as you navigate, while the route’s JavaScript loads (especially noticeable in dev). **`npm run dev`** uses **`next dev --turbo`**. **`next.config.js`** sets **`experimental.optimizePackageImports: ["lucide-react"]`** so icon imports tree-shake instead of pulling the whole package. Wagmi’s React Query client uses **30s `staleTime`** to reduce background refetching.
 
-**Vite:** **`/identity`**, **`/ens`**, and **`/balances`** are loaded with **`React.lazy`** and a shared **`PageLoading`** skeleton so those chunks download only when you open those routes (home **`Chat`** stays eager).
+**Vite:** **`/identity`**, **`/ens`**, **`/balances`**, and **`/swarm`** are loaded with **`React.lazy`** and a shared **`PageLoading`** skeleton so those chunks download only when you open those routes (home **`Chat`** stays eager).
 
 **UX / a11y (both stacks):** **Skip to main content** link (keyboard), visible **`:focus-visible`** rings on interactive controls, chat **role** landmarks and **context-aware error hints** (Gemini quota vs 1Claw vs generic env), local **faucet** uses an in-app toast instead of **`window.alert`**, **Balances** explains when no ERC-20 tokens are configured for the chain.
 
@@ -226,7 +232,7 @@ node dist/cli.js
 
 That runs the same entry as **`scaffold-agent`** / **`npx scaffold-agent`** after a successful build. **`npm start`** is equivalent to **`node dist/cli.js`**. Use **`node dist/cli.js --help`** for the full flag list.
 
-While iterating on **`src/`**, **`npm run dev`** runs **`tsup --watch`** so **`dist/cli.js`** stays rebuilt on save. After touching **`src/cli.ts`**, **`src/cli-argv.ts`**, **`src/cli-wizard.ts`**, or **`src/actions/scaffold.ts`**, run **`npm run build`** (or keep **`npm run dev`** running) before testing the CLI.
+While iterating on **`src/`**, **`npm run dev`** runs **`tsup --watch`** so **`dist/cli.js`** stays rebuilt on save. After touching **`src/cli.ts`**, **`src/cli-argv.ts`**, **`src/cli-wizard.ts`**, **`src/agent-project-config.ts`**, or **`src/actions/scaffold.ts`**, run **`npm run build`** (or keep **`npm run dev`** running) before testing the CLI.
 
 Contributor-oriented details: **[`AGENTS.md`](./AGENTS.md)**.
 
