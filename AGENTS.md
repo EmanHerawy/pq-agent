@@ -73,6 +73,10 @@ Generated apps embed large template literals (e.g. Next **`app/api/chat/route.ts
 - Never commit real API keys, agent keys, or deployer private keys.
 - Do not suggest pasting **Ethereum addresses** into **`ONECLAW_AGENT_ID`** (UUID only).
 
+## Generated repos: `just reset` (1Claw)
+
+When **`secrets`** or **`llm`** is 1Claw, scaffolds include **`just reset`** to create a **new** vault + agent after install if initial setup hit limits. It prints a **backup warning** — see the generated **`README.md`** and **`scripts/reset-1claw-setup.mjs`**.
+
 ## Further reading
 
 - Human-oriented overview: **`README.md`**

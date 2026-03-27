@@ -215,6 +215,14 @@ npm publish --tag latest
 
 Optional: **`npm publish --provenance --tag latest`** if you use [npm provenance](https://docs.npmjs.com/generating-provenance-statements) from your environment.
 
+## Acknowledgements
+
+This project builds on ideas and tooling from the Ethereum builder community:
+
+- **[Scaffold-ETH 2](https://scaffoldeth.io)** / **[scaffold-eth/scaffold-eth-2](https://github.com/scaffold-eth/scaffold-eth-2)** — monorepo patterns, RainbowKit/wagmi/viem stack, and UX inspiration for onchain apps.
+- **[BuidlGuidl](https://BuidlGuidl.com)** — education and builder tooling for the ecosystem.
+- **Burner wallet** — local dev wallet UX via **[burner-connector](https://github.com/scaffold-eth/burner-connector)** (Scaffold-ETH / BuidlGuidl–style), used when the generated app targets **localhost**.
+
 ## License
 
 [MIT](LICENSE) — see `LICENSE` in the repo.

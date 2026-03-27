@@ -29,6 +29,10 @@ node dist/cli.js --help
 | `--skip-npm-install` | |
 | `--skip-auto-fund` | |
 
+## Generated monorepo (after scaffold)
+
+- **`just reset`** — re-bootstrap 1Claw vault + agent (only when project uses 1Claw); backup `.env` / encrypted secrets first.
+
 ## Links
 
 - [1claw Shroud](https://docs.1claw.xyz/docs/guides/shroud)

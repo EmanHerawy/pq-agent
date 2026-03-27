@@ -1,6 +1,6 @@
 {
     "name": "scaffold-agent",
-    "version": "0.1.10",
+    "version": "0.1.11",
     "description": "Interactive CLI to scaffold monorepo projects for onchain AI agents",
     "type": "module",
     "author": "1clawAI (https://1claw.xyz)",
