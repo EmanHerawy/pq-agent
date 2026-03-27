@@ -17,11 +17,6 @@ export function identityPageSource(
       : `import { Link } from "react-router-dom";`;
   const lp = (path: string) =>
     framework === "next" ? `href="${path}"` : `to="${path}"`;
-  const envAddr =
-    framework === "next"
-      ? `(process.env.NEXT_PUBLIC_AGENT_ADDRESS || "").trim()`
-      : `(import.meta.env.VITE_AGENT_ADDRESS || "").trim()`;
-
   const defaultAgentTitle = JSON.stringify(`${projectName} agent`);
   const defaultDescription = JSON.stringify(
     `Onchain AI agent scaffolded with ${projectName}. ERC-8004 registration via Agent0.`,
@@ -34,6 +29,7 @@ import { ArrowLeft, Check, Copy, Fingerprint, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 import { getActiveNetwork } from "@/lib/networks";
+import { useEffectiveAgentAddress } from "@/lib/agent-swarm";
 ${linkImport}
 
 type AgentRow = {
@@ -70,7 +66,7 @@ export default function IdentityPage() {
   const chainId = net.chainId;
   const rpcUrl = net.rpcUrl;
 
-  const agentAddress = ${envAddr};
+  const agentAddress = useEffectiveAgentAddress();
   const { openConnectModal } = useConnectModal();
   const { address: connected, connector } = useAccount();
   const walletChainId = useChainId();

@@ -16,6 +16,8 @@ const TAG_LEN = 16;
 export const ENV_SECRET_KEY_NAMES = [
   "DEPLOYER_PRIVATE_KEY",
   "AGENT_PRIVATE_KEY",
+  /** JSON array of `{ id, privateKey }` for swarm slots after the primary agent. */
+  "SWARM_AGENT_KEYS_JSON",
   "ONECLAW_API_KEY",
   "ONECLAW_AGENT_API_KEY",
   "OPENAI_API_KEY",

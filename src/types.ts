@@ -27,10 +27,21 @@ export interface WalletInfo {
   privateKey: string;
 }
 
+/** One generated swarm wallet (index 0 is primary AGENT_ADDRESS / AGENT_PRIVATE_KEY). */
+export interface SwarmAgentDef {
+  id: string;
+  address: string;
+  privateKey: string;
+  /** Optional tag from `agent.json` `agents` map (e.g. preset label). */
+  preset?: string;
+}
+
 export interface IdentityConfig {
   generateAgent: boolean;
   agentAddress?: string;
   agentPrivateKey?: string;
+  /** When length > 1, extras beyond [0] live in SWARM_AGENT_KEYS_JSON. */
+  swarmAgents?: SwarmAgentDef[];
 }
 
 export interface DeployerConfig {
@@ -58,4 +69,6 @@ export interface ScaffoldConfig {
   /** Set when llm === "oneclaw" — Token Billing vs own key in vault / .env */
   shroudBillingMode?: ShroudBillingMode;
   oneClawVaultId?: string;
+  /** Opaque blob from `agent.json` `extra` (passed to templates / future use). */
+  agentConfigExtra?: unknown;
 }

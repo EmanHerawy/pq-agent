@@ -62,6 +62,14 @@ export type CliFlagValues = {
   framework?: string;
   "skip-npm-install"?: boolean;
   "skip-auto-fund"?: boolean;
+  /** Total agent wallets when generating (1–64). */
+  swarm?: string;
+  /** Load defaults from agent.json (merged; CLI overrides). */
+  "from-config"?: string;
+  /** Print merged agent.json to stdout (no scaffold; secrets redacted). */
+  "dump-config"?: boolean;
+  /** Write --dump-config output to this file instead of stdout. */
+  "dump-config-out"?: string;
 };
 
 export type ParsedScaffoldArgv = {
@@ -130,6 +138,10 @@ export function parseScaffoldArgv(argv: string[]): ParsedScaffoldArgv {
       framework: { type: "string" },
       "skip-npm-install": { type: "boolean" },
       "skip-auto-fund": { type: "boolean" },
+      swarm: { type: "string" },
+      "from-config": { type: "string" },
+      "dump-config": { type: "boolean" },
+      "dump-config-out": { type: "string" },
     },
     allowPositionals: true,
     strict: true,

@@ -36,6 +36,11 @@ import {
   parseShroudUpstream,
   resolveProjectName,
 } from "./cli-argv.js";
+import {
+  type AgentFileExtras,
+  type SwarmPlanEntry,
+  resolveSwarmPlan,
+} from "./agent-project-config.js";
 
 export type GatheredWizard = {
   projectName: string;
@@ -53,6 +58,9 @@ export type GatheredWizard = {
   framework: AppFramework;
   skipNpmInstall: boolean;
   skipAutoFund: boolean;
+  /** Wallets to generate when generateAgent (ids + optional presets). */
+  swarmEntries: SwarmPlanEntry[];
+  agentFileExtras: AgentFileExtras | null;
 };
 
 function niErr(msg: string): never {
@@ -146,6 +154,7 @@ export async function gatherWizardInputs(
   v: CliFlagValues,
   positionals: string[],
   nonInteractive: boolean,
+  fileExtras?: AgentFileExtras | null,
 ): Promise<GatheredWizard> {
   const skipNpm = Boolean(v["skip-npm-install"]);
   const skipAutoFund = Boolean(v["skip-auto-fund"]);
@@ -171,6 +180,28 @@ export async function gatherWizardInputs(
   } else {
     generateAgent = await promptIdentity(secrets.mode === "oneclaw");
   }
+
+  const extras = fileExtras ?? null;
+  const presetMap = extras?.agentPresets ?? {};
+  if (!generateAgent) {
+    const badSwarm =
+      (v.swarm !== undefined && v.swarm !== "") ||
+      (extras?.swarmFromFile !== undefined && extras.swarmFromFile > 1) ||
+      Object.keys(presetMap).length > 0;
+    if (badSwarm) {
+      const msg =
+        "Swarm / named agents require an Ethereum agent wallet — use --agent generate (or omit swarm / agents from config).";
+      if (nonInteractive) niErr(msg);
+      throw new Error(msg);
+    }
+  }
+
+  const { entries: swarmEntries } = resolveSwarmPlan({
+    generateAgent,
+    swarmFlag: v.swarm,
+    swarmFromFile: extras?.swarmFromFile,
+    agentPresets: presetMap,
+  });
 
   let installAmpersendSdk: boolean;
   if (nonInteractive) {
@@ -329,5 +360,7 @@ export async function gatherWizardInputs(
     framework,
     skipNpmInstall: skipNpm,
     skipAutoFund,
+    swarmEntries,
+    agentFileExtras: extras,
   };
 }

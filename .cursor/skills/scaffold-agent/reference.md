@@ -28,10 +28,20 @@ node dist/cli.js --help
 | `--ampersend` | `yes` \| `no` |
 | `--skip-npm-install` | |
 | `--skip-auto-fund` | |
+| `--swarm <n>` | 1–64 agent wallets; extras in `SWARM_AGENT_KEYS_JSON` |
+| `--from-config <file>` | Merge `agent.json`; CLI overrides file |
+| `--dump-config` | Print merged config JSON to stdout (secrets omitted) |
+| `--dump-config-out <file>` | Write that JSON to a file |
+
+### `agent.json` (for `--from-config` / `--dump-config`)
+
+- **`project`** or **`name`**, **`swarm`**, **`agents`**: `{ "my-agent-id": "preset-label" }`, optional **`extra`**, optional **`options`**: `{ "secrets": "encrypted", … }`.
+- Top-level keys may mirror CLI flags (same names as long options).
 
 ## Generated monorepo (after scaffold)
 
 - **`just reset`** — re-bootstrap 1Claw vault + agent (only when project uses 1Claw); backup `.env` / encrypted secrets first.
+- **`just swarm agents=N`** — append swarm wallets (`public/agents.json` + `SWARM_AGENT_KEYS_JSON`) when the UI package exists.
 
 ## Links
 

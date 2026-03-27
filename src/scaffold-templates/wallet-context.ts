@@ -123,7 +123,13 @@ export function web3ProvidersSource(framework: WalletTemplateFramework): string 
       ? `import { wagmiConfig } from "@/lib/wagmi-config";
 import { BurnerAutoConnect } from "@/lib/burner-auto-connect";`
       : `import { wagmiConfig } from "./wagmi-config";
-import { BurnerAutoConnect } from "./burner-auto-connect";`;
+import { BurnerAutoConnect } from "./burner-auto-connect";
+import { AgentSwarmProvider } from "./agent-swarm";`;
+
+  const inner =
+    framework === "next"
+      ? "          {children}\n"
+      : "          <AgentSwarmProvider>{children}</AgentSwarmProvider>\n";
 
   return `${useClient}import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -147,8 +153,7 @@ export function Web3Providers({ children }: { children: ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider theme={darkTheme()} modalSize="compact">
           <BurnerAutoConnect />
-          {children}
-        </RainbowKitProvider>
+${inner}        </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );
@@ -161,9 +166,14 @@ export function nextAppProvidersSource(): string {
 
 import type { ReactNode } from "react";
 import { Web3Providers } from "@/lib/web3-providers";
+import { AgentSwarmProvider } from "@/lib/agent-swarm";
 
 export function Providers({ children }: { children: ReactNode }) {
-  return <Web3Providers>{children}</Web3Providers>;
+  return (
+    <Web3Providers>
+      <AgentSwarmProvider>{children}</AgentSwarmProvider>
+    </Web3Providers>
+  );
 }
 `;
 }

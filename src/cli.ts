@@ -1,5 +1,5 @@
-import { join, dirname } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { join, dirname, resolve } from "node:path";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import chalk from "chalk";
@@ -8,8 +8,15 @@ import {
   NON_INTERACTIVE_DEFAULTS,
   parseScaffoldArgv,
   printNonInteractiveExample,
+  validateProjectName,
 } from "./cli-argv.js";
 import { gatherWizardInputs } from "./cli-wizard.js";
+import {
+  buildAgentJsonForDump,
+  loadAgentProjectConfig,
+  withDumpTemplateDefaults,
+  type AgentFileExtras,
+} from "./agent-project-config.js";
 import { shroudProviderVaultKeyPath } from "./shroud-paths.js";
 import { generateWallet } from "./actions/keys.js";
 import { writeEnvFile } from "./actions/env.js";
@@ -22,6 +29,7 @@ import type {
   LlmProvider,
   ShroudBillingMode,
   ShroudUpstreamProvider,
+  SwarmAgentDef,
 } from "./types.js";
 
 function readOwnPackageJson(): {
@@ -73,7 +81,12 @@ Secrets & encryption:
 
 Agent & extras:
   --agent <choice>            generate | none  (default with -y: generate)
+  --swarm <n>                 Generate N agent wallets (1–64); primary stays AGENT_ADDRESS
   --ampersend <choice>        yes | no        (default with -y: no)
+  --from-config <file>        Merge options from agent.json (CLI flags override file)
+  --dump-config               Print agent.json to stdout (merged flags + optional --from-config;
+                              secret flags omitted; fills unset fields with -y defaults)
+  --dump-config-out <file>    Write agent.json to a file (implies --dump-config if set alone)
 
 LLM:
   --llm <provider>            oneclaw | gemini | openai | anthropic
@@ -192,13 +205,87 @@ async function main() {
     process.exit(0);
   }
 
+  const wantsDumpConfig =
+    Boolean(values["dump-config"]) ||
+    Boolean(values["dump-config-out"]?.trim());
+
+  if (wantsDumpConfig) {
+    let cliValues = values;
+    let configExtras: AgentFileExtras | null = null;
+    if (values["from-config"]?.trim()) {
+      const fromConfigPath = resolve(
+        process.cwd(),
+        values["from-config"].trim(),
+      );
+      try {
+        const merged = loadAgentProjectConfig(fromConfigPath, values);
+        cliValues = merged.values;
+        configExtras = merged.extras;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(chalk.red(msg));
+        process.exit(1);
+      }
+    }
+
+    const filled = withDumpTemplateDefaults(cliValues);
+    const fromPos = positionals[0]?.trim();
+    const fromFlag = filled.project?.trim();
+    let projectName: string;
+    try {
+      if (fromPos && fromFlag && fromPos !== fromFlag) {
+        throw new Error(
+          "CLI: project name given both as argument and --project; use only one for --dump-config.",
+        );
+      }
+      const raw = fromPos || fromFlag || "my-agent";
+      projectName = validateProjectName(raw);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(chalk.red(msg));
+      process.exit(1);
+    }
+
+    const jsonObj = buildAgentJsonForDump(filled, configExtras, projectName);
+    const text = JSON.stringify(jsonObj, null, 2) + "\n";
+    const outPath = values["dump-config-out"]?.trim();
+    if (outPath) {
+      const absOut = resolve(process.cwd(), outPath);
+      writeFileSync(absOut, text, { mode: 0o600 });
+      console.error(chalk.gray(`Wrote ${absOut}`));
+    } else {
+      process.stdout.write(text);
+    }
+    process.exit(0);
+  }
+
   showBanner();
 
   const nonInteractive = Boolean(values["non-interactive"]);
 
+  let cliValues = values;
+  let configExtras: AgentFileExtras | null = null;
+  if (values["from-config"]?.trim()) {
+    const fromConfigPath = resolve(process.cwd(), values["from-config"].trim());
+    try {
+      const merged = loadAgentProjectConfig(fromConfigPath, values);
+      cliValues = merged.values;
+      configExtras = merged.extras;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(chalk.red(msg));
+      process.exit(1);
+    }
+  }
+
   let w;
   try {
-    w = await gatherWizardInputs(values, positionals, nonInteractive);
+    w = await gatherWizardInputs(
+      cliValues,
+      positionals,
+      nonInteractive,
+      configExtras,
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(chalk.red("\n" + msg + "\n"));
@@ -206,7 +293,8 @@ async function main() {
     process.exit(1);
   }
 
-  const { projectName, secrets, generateAgent, installAmpersendSdk, llm } = w;
+  const { projectName, secrets, generateAgent, installAmpersendSdk, llm, swarmEntries } =
+    w;
   let {
     shroudUpstream,
     shroudBillingMode,
@@ -308,10 +396,28 @@ async function main() {
   keyValue("Address", deployer.address);
 
   let agent: { address: string; privateKey: string } | undefined;
-  if (generateAgent) {
-    agent = generateWallet();
-    success("Generated agent wallet");
-    keyValue("Address", agent.address);
+  let swarmAgents: SwarmAgentDef[] | undefined;
+  if (generateAgent && swarmEntries.length > 0) {
+    swarmAgents = [];
+    for (const entry of swarmEntries) {
+      const wlt = generateWallet();
+      swarmAgents.push({
+        id: entry.id,
+        address: wlt.address,
+        privateKey: wlt.privateKey,
+        preset: entry.preset,
+      });
+    }
+    agent = swarmAgents[0];
+    if (swarmAgents.length === 1) {
+      success("Generated agent wallet");
+      keyValue("Address", agent.address);
+    } else {
+      success(`Generated ${swarmAgents.length} swarm agent wallets`);
+      for (const s of swarmAgents) {
+        keyValue(s.id, s.address);
+      }
+    }
   }
 
   // ── 1Claw vault setup ────────────────────────────────────────────────
@@ -385,6 +491,7 @@ async function main() {
       generateAgent,
       agentAddress: agent?.address,
       agentPrivateKey: agent?.privateKey,
+      swarmAgents,
     },
     installAmpersendSdk,
     deployer: { address: deployer.address, privateKey: deployer.privateKey },
@@ -394,6 +501,7 @@ async function main() {
     shroudUpstream,
     shroudBillingMode,
     oneClawVaultId: vaultId,
+    agentConfigExtra: w.agentFileExtras?.extra,
   };
 
   try {
@@ -418,6 +526,13 @@ async function main() {
     envVars["AGENT_PRIVATE_KEY"] = agent.privateKey;
     envVars["NEXT_PUBLIC_AGENT_ADDRESS"] = agent.address;
     envVars["VITE_AGENT_ADDRESS"] = agent.address;
+  }
+  if (swarmAgents && swarmAgents.length > 1) {
+    const extraKeys = swarmAgents.slice(1).map(({ id, privateKey }) => ({
+      id,
+      privateKey,
+    }));
+    envVars["SWARM_AGENT_KEYS_JSON"] = JSON.stringify(extraKeys);
   }
 
   if (framework === "nextjs") {
@@ -591,7 +706,11 @@ async function main() {
   const accounts: Array<{ label: string; address: string }> = [
     { label: "Deployer", address: deployer.address },
   ];
-  if (agent) {
+  if (swarmAgents && swarmAgents.length > 1) {
+    for (const s of swarmAgents) {
+      accounts.push({ label: `Agent (${s.id})`, address: s.address });
+    }
+  } else if (agent) {
     accounts.push({ label: "Agent", address: agent.address });
   }
   await displayAccounts(accounts);

@@ -12,17 +12,13 @@ export function balancesPageSource(framework: BalancesPageFramework): string {
       : `import { Link } from "react-router-dom";`;
   const lp = (path: string) =>
     framework === "next" ? `href="${path}"` : `to="${path}"`;
-  const envAgent =
-    framework === "next"
-      ? `(process.env.NEXT_PUBLIC_AGENT_ADDRESS || "").trim()`
-      : `(import.meta.env.VITE_AGENT_ADDRESS || "").trim()`;
-
   return `${useClient}import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Loader2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 import { useAccount } from "wagmi";
 import { getActiveNetwork } from "@/lib/networks";
+import { useEffectiveAgentAddress } from "@/lib/agent-swarm";
 ${linkImport}
 
 type BalanceRow = { symbol: string; balance: string; decimals: number; address?: string };
@@ -106,7 +102,7 @@ function BalancesCard({
 
 export default function BalancesPage() {
   const net = getActiveNetwork();
-  const agentAddress = ${envAgent};
+  const agentAddress = useEffectiveAgentAddress();
   const { address: walletAddress } = useAccount();
 
   const [agentData, setAgentData] = useState<BalancesResponse | null>(null);

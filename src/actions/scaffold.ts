@@ -19,11 +19,16 @@ import {
   getSecretAddScript,
   getShowAccountsScript,
   getShowBalancesAllChainsScript,
+  getSwarmAgentsScript,
   getSecretsCryptoScript,
   getVerifyFoundryScript,
   getVerifyHardhatScript,
   getWithSecretsScript,
 } from "./project-scripts.js";
+import {
+  agentSwarmContextSource,
+  swarmPageSource,
+} from "../scaffold-templates/agent-swarm.js";
 import { balancesPageSource } from "../scaffold-templates/balances-page.js";
 import { ensPageSource } from "../scaffold-templates/ens-page.js";
 import { identityPageSource } from "../scaffold-templates/identity-page.js";
@@ -247,6 +252,18 @@ function writeRootFiles(root: string, config: ScaffoldConfig) {
     file(root, "viem-chain.ts", viemChainHelperSource());
   }
 
+  if (config.agentConfigExtra !== undefined && config.agentConfigExtra !== null) {
+    try {
+      file(
+        root,
+        "agent.config.extra.json",
+        JSON.stringify(config.agentConfigExtra, null, 2) + "\n",
+      );
+    } catch {
+      /* non-serializable extra — skip file */
+    }
+  }
+
   const gitignoreLines = [
     "node_modules/",
     "dist/",
@@ -352,7 +369,7 @@ ${config.chain !== "none" ? "\n**Local deploy:** **\`just generate\`** tries to 
 
 | Command | Description |
 |---|---|
-${config.chain !== "none" ? "| \`just chain\` | Start local blockchain |\n| \`just fund\` | Fund \`DEPLOYER_ADDRESS\` + optional \`AGENT_ADDRESS\` (100 ETH each from account #0) |\n| \`just deploy\` | Deploy contracts & auto-generate ABI types (optional: \`just deploy base\`, \`just deploy --network sepolia\`) |\n| \`just verify\` | Verify \`AgentWallet\` on an explorer (default network: sepolia; e.g. \`just verify base\`) |\n" : ""}${config.secrets.mode === "oneclaw" || config.llm === "oneclaw" ? "| \`just list-1claw\` | Print vault IDs + agent UUIDs from API (\`ONECLAW_API_KEY\`) |\n| \`just sync-1claw-env\` | List + write first vault + agent UUID into repo-root \`.env\` |\n| \`just reset\` | **Re-bootstrap 1Claw** — new vault + secrets + agent (see warning; use \`just reset -- --yes\` to skip confirm) |\n" : ""}| \`just env KEY VALUE\` | Upsert repo-root \`.env\` (e.g. **Reown** \`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID\`${config.framework === "vite" ? " or \`VITE_WALLETCONNECT_PROJECT_ID\`" : ""}) |\n| \`just enc KEY VALUE\` | Add/update a key in \`.env.secrets.encrypted\` (password prompt) |\n${config.secrets.mode === "oneclaw" || config.llm === "oneclaw" ? "| \`just vault PATH VALUE\` | Store a secret in your **1Claw vault** |\n" : ""}${config.framework === "nextjs" || config.framework === "vite" ? "| \`just reown PROJECT_ID\` | WalletConnect Cloud id → \`.env\` |\n" : ""}${config.framework === "nextjs" || config.framework === "vite" ? "| \`just register-agent\` | Register ERC-8004 agent on-chain (\`AGENT_PRIVATE_KEY\`; uses \`scaffold.config\` network) |\n" : ""}${config.framework === "nextjs" || config.framework === "vite" ? "| \`just balances\` | Native balance on **all** networks in \`network-definitions\` (\`DEPLOYER_ADDRESS\` + agent; \`rpcOverrides\` from \`scaffold.config\`) |\n" : ""}| \`just start\` | Start the frontend / agent (may prompt for secrets password) |
+${config.chain !== "none" ? "| \`just chain\` | Start local blockchain |\n| \`just fund\` | Fund \`DEPLOYER_ADDRESS\`, \`AGENT_ADDRESS\`, and any swarm rows in \`packages/*/public/agents.json\` (100 ETH each from account #0) |\n| \`just deploy\` | Deploy contracts & auto-generate ABI types (optional: \`just deploy base\`, \`just deploy --network sepolia\`) |\n| \`just verify\` | Verify \`AgentWallet\` on an explorer (default network: sepolia; e.g. \`just verify base\`) |\n" : ""}${config.secrets.mode === "oneclaw" || config.llm === "oneclaw" ? "| \`just list-1claw\` | Print vault IDs + agent UUIDs from API (\`ONECLAW_API_KEY\`) |\n| \`just sync-1claw-env\` | List + write first vault + agent UUID into repo-root \`.env\` |\n| \`just reset\` | **Re-bootstrap 1Claw** — new vault + secrets + agent (see warning; use \`just reset -- --yes\` to skip confirm) |\n" : ""}| \`just env KEY VALUE\` | Upsert repo-root \`.env\` (e.g. **Reown** \`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID\`${config.framework === "vite" ? " or \`VITE_WALLETCONNECT_PROJECT_ID\`" : ""}) |\n| \`just enc KEY VALUE\` | Add/update a key in \`.env.secrets.encrypted\` (password prompt) |\n${config.secrets.mode === "oneclaw" || config.llm === "oneclaw" ? "| \`just vault PATH VALUE\` | Store a secret in your **1Claw vault** |\n" : ""}${config.framework === "nextjs" || config.framework === "vite" ? "| \`just reown PROJECT_ID\` | WalletConnect Cloud id → \`.env\` |\n" : ""}${config.framework === "nextjs" || config.framework === "vite" ? "| \`just register-agent\` | Register ERC-8004 agent on-chain (\`AGENT_PRIVATE_KEY\`; uses \`scaffold.config\` network) |\n" : ""}${config.framework === "nextjs" || config.framework === "vite" ? "| \`just swarm agents=N\` | Add **N** swarm wallets (\`public/agents.json\` + \`SWARM_AGENT_KEYS_JSON\`; default \`agents=1\`) |\n" : ""}${config.framework === "nextjs" || config.framework === "vite" ? "| \`just balances\` | Native balance on **all** networks in \`network-definitions\` (\`DEPLOYER_ADDRESS\` + agent; \`rpcOverrides\` from \`scaffold.config\`) |\n" : ""}| \`just start\` | Start the frontend / agent (may prompt for secrets password) |
 | \`just accounts\` | QR codes for \`DEPLOYER_ADDRESS\` + agent (\`AGENT_ADDRESS\` / \`NEXT_PUBLIC_AGENT_ADDRESS\`; repo-root \`.env\`) |
 | \`just generate\` | Generate a deployer wallet (password prompt if \`.env.secrets.encrypted\` exists) |
 ${config.installAmpersendSdk ? "\n## Ampersend (x402 payments)\n\nSee **[\\`AMPERSEND.md\\`](./AMPERSEND.md)** — [docs](https://docs.ampersend.ai/), [npm](https://www.npmjs.com/package/@ampersend_ai/ampersend-sdk), [GitHub](https://github.com/edgeandnode/ampersend-sdk).\n" : ""}
@@ -550,6 +567,10 @@ function writeJustfile(root: string, config: ScaffoldConfig) {
       "register-agent:",
       "    node scripts/with-secrets.mjs -- npx tsx scripts/register-agent.ts",
       "",
+      "# Add N swarm agent wallets (public/agents.json + SWARM_AGENT_KEYS_JSON); default agents=1",
+      "swarm agents='1':",
+      "    node scripts/with-secrets.mjs -- node scripts/swarm-agents.mjs agents={{agents}}",
+      "",
     );
   }
 
@@ -597,6 +618,7 @@ function writeScripts(root: string, config: ScaffoldConfig) {
       getRegisterAgentScript(config.projectName),
     );
     file(scripts, "show-balances-all-chains.ts", getShowBalancesAllChainsScript());
+    file(scripts, "swarm-agents.mjs", getSwarmAgentsScript());
   }
 
   // ── generate-abi-types.mjs ──────────────────────────────────────────────
@@ -1766,7 +1788,7 @@ function chatPageContent(
       : `import { Link } from "react-router-dom";\n`;
   const cnImport = needLink ? `import { cn } from "@/lib/utils";\n` : "";
   const lucideParts = ["SendHorizontal", "Bot", "User"];
-  if (identityLink) lucideParts.push("BadgeCheck", "Info", "Wallet");
+  if (identityLink) lucideParts.push("BadgeCheck", "Info", "Wallet", "Users");
   if (debugLink) lucideParts.push("Bug");
   const lucideIcons = `import { ${lucideParts.join(", ")} } from "lucide-react";`;
   const lp = (path: string) =>
@@ -1777,6 +1799,9 @@ function chatPageContent(
           )`;
   const localFaucetImport = identityLink
     ? `import { LocalFaucetButton } from "@/components/LocalFaucetButton";\n`
+    : "";
+  const swarmPickerImport = identityLink
+    ? `import { SwarmAgentPicker } from "@/lib/agent-swarm";\n`
     : "";
   const headerFaucet = identityLink
     ? `
@@ -1815,6 +1840,17 @@ function chatPageContent(
           <Info className="h-4 w-4" aria-hidden />
         </Link>`
     : "";
+  const headerSwarm = identityLink
+    ? `
+        <Link
+          ${lp("/swarm")}
+          className={${iconBtnClass}}
+          title="Swarm agents"
+          aria-label="Swarm agents"
+        >
+          <Users className="h-4 w-4" aria-hidden />
+        </Link>`
+    : "";
   const headerBug = debugLink
     ? `
         <Link
@@ -1826,16 +1862,17 @@ function chatPageContent(
           <Bug className="h-4 w-4" aria-hidden />
         </Link>`
     : "";
-  const headerIcons = `${headerFaucet}${headerBalances}${headerEns}${headerIdentity}${headerBug}`;
+  const headerIcons = `${headerFaucet}${headerBalances}${headerEns}${headerIdentity}${headerSwarm}${headerBug}`;
   const headerRight = `
         <div className="flex items-center gap-2 shrink-0">
           ${headerIcons ? `<div className="flex items-center gap-1">${headerIcons}</div>` : ""}
+          ${identityLink ? `<SwarmAgentPicker className="hidden sm:flex shrink-0" />` : ""}
           <ConnectWalletButton />
         </div>`;
 
   return `"use client";
 
-${linkImports}${localFaucetImport}import { useChat } from "ai/react";
+${linkImports}${localFaucetImport}${swarmPickerImport}import { useChat } from "ai/react";
 import { useEffect, useRef } from "react";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 import { Button } from "@/components/ui/button";
@@ -2743,6 +2780,32 @@ function nextApiRoute(
   return nextApiRouteDirectThirdParty(llm);
 }
 
+/** Public roster for `fetch("/agents.json")` (no private keys). */
+function buildPublicAgentsJson(config: ScaffoldConfig): string {
+  const swarm = config.identity.swarmAgents;
+  if (swarm && swarm.length > 0) {
+    return (
+      JSON.stringify(
+        swarm.map((s) => {
+          const row: Record<string, string> = {
+            id: s.id,
+            address: s.address,
+          };
+          if (s.preset) row.preset = s.preset;
+          return row;
+        }),
+        null,
+        2,
+      ) + "\n"
+    );
+  }
+  const a = config.identity.agentAddress?.trim();
+  if (a && /^0x[a-fA-F0-9]{40}$/i.test(a)) {
+    return JSON.stringify([{ id: "agent", address: a }], null, 2) + "\n";
+  }
+  return "[]\n";
+}
+
 // ── NextJS ──────────────────────────────────────────────────────────────────
 
 function scaffoldNextJS(root: string, config: ScaffoldConfig) {
@@ -2755,6 +2818,7 @@ function scaffoldNextJS(root: string, config: ScaffoldConfig) {
   dir(pkg, "app", "identity");
   dir(pkg, "app", "ens");
   dir(pkg, "app", "balances");
+  dir(pkg, "app", "swarm");
   dir(pkg, "components", "ui");
   dir(pkg, "lib");
   dir(pkg, "contracts");
@@ -2956,6 +3020,7 @@ module.exports = nextConfig;
   file(pkg, "postcss.config.mjs", POSTCSS_CONFIG);
   file(pkg, "components.json", COMPONENTS_JSON);
   file(pkg, "lib/utils.ts", UTILS_TS);
+  file(pkg, "lib/agent-swarm.tsx", agentSwarmContextSource("next"));
   file(pkg, "lib/networks.ts", nextNetworksReexportSource());
   file(pkg, "lib/burner-auto-connect.tsx", burnerAutoConnectSource());
   file(pkg, "lib/wagmi-config.ts", wagmiConfigSource(config.projectName, "next"));
@@ -3024,6 +3089,7 @@ module.exports = function stubPinoPretty() {
   file(pkg, "app/balances/loading.tsx", routeLoading);
   file(pkg, "app/debug/loading.tsx", routeLoading);
   file(pkg, "app/ens/loading.tsx", routeLoading);
+  file(pkg, "app/swarm/loading.tsx", routeLoading);
 
   file(
     pkg,
@@ -3070,6 +3136,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 `,
   );
 
+  file(pkg, "public/agents.json", buildPublicAgentsJson(config));
+
   file(pkg, "app/page.tsx", chatPageContent(config.projectName));
   file(pkg, "app/debug/page.tsx", debugPageContent());
   file(
@@ -3079,6 +3147,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   );
   file(pkg, "app/ens/page.tsx", ensPageSource(config.projectName, "next"));
   file(pkg, "app/balances/page.tsx", balancesPageSource("next"));
+  file(pkg, "app/swarm/page.tsx", swarmPageSource("next"));
   file(pkg, "app/api/agent0/lookup/route.ts", nextApiAgent0LookupRoute());
   file(pkg, "app/api/balances/route.ts", nextApiBalancesRoute());
   file(pkg, "app/api/faucet/route.ts", nextApiFaucetRoute());
@@ -3767,6 +3836,7 @@ interface ImportMeta {
   file(pkg, "src/lib/utils.ts", UTILS_TS);
   file(pkg, "src/lib/networks.ts", viteNetworksReexportSource());
   file(pkg, "src/lib/burner-auto-connect.tsx", burnerAutoConnectSource());
+  file(pkg, "src/lib/agent-swarm.tsx", agentSwarmContextSource("vite"));
   file(pkg, "src/lib/wagmi-config.ts", wagmiConfigSource(config.projectName, "vite"));
   file(pkg, "src/lib/web3-providers.tsx", web3ProvidersSource("vite"));
   file(pkg, "src/components/ConnectWalletButton.tsx", connectWalletButtonSource());
@@ -3774,6 +3844,8 @@ interface ImportMeta {
   file(pkg, "src/components/ui/button.tsx", BUTTON_TSX);
   file(pkg, "src/components/ui/input.tsx", INPUT_TSX);
   file(pkg, "src/index.css", SHADCN_CSS);
+
+  file(pkg, "public/agents.json", buildPublicAgentsJson(config));
 
   file(
     pkg,
@@ -3807,6 +3879,7 @@ import "./index.css";
 const IdentityPage = lazy(() => import("./IdentityPage"));
 const EnsPage = lazy(() => import("./EnsPage"));
 const BalancesPage = lazy(() => import("./BalancesPage"));
+const SwarmPage = lazy(() => import("./SwarmPage"));
 
 createRoot(document.getElementById("root")!).render(
   <Web3Providers>
@@ -3824,6 +3897,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/identity" element={<IdentityPage />} />
             <Route path="/ens" element={<EnsPage />} />
             <Route path="/balances" element={<BalancesPage />} />
+            <Route path="/swarm" element={<SwarmPage />} />
           </Routes>
         </Suspense>
       </div>
@@ -3850,6 +3924,7 @@ createRoot(document.getElementById("root")!).render(
   );
   file(pkg, "src/EnsPage.tsx", ensPageSource(config.projectName, "vite"));
   file(pkg, "src/BalancesPage.tsx", balancesPageSource("vite"));
+  file(pkg, "src/SwarmPage.tsx", swarmPageSource("vite"));
   file(
     pkg,
     "server.ts",

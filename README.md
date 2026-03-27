@@ -192,15 +192,6 @@ When you choose **1Claw (1claw.xyz)**, the CLI:
 
 All chat routes use the [Vercel AI SDK](https://sdk.vercel.ai/) for streaming. **Shroud + Google/Gemini upstream:** if **`SHROUD_BILLING_MODE=token_billing`**, chat uses **Shroud** for Gemini (no Google API key in your app) so **1Claw token billing** can apply — enable billing for the agent on [1claw.xyz](https://1claw.xyz). If a key **is** present (**`SHROUD_PROVIDER_API_KEY`**, **`GOOGLE_GENERATIVE_AI_API_KEY`**, or vault **`api-keys/google`** with **`ONECLAW_VAULT_ID`**), the route **prefers the direct Google Generative AI API** (better compatibility than some Shroud↔Gemini paths). With **`SHROUD_BILLING_MODE=provider_api_key`** and **no** Google key resolvable, the route returns **503** (BYOK required for that mode). **Direct** Google API default is **`gemini-2.5-flash`** (`GOOGLE_GENERATIVE_AI_MODEL`). **Shroud** path default for Gemini is **`gemini-2.0-flash`** (`SHROUD_DEFAULT_MODEL`) — token billing uses Stripe’s AI gateway, and unsupported model ids can return **404** with Stripe doc links in the error body. The generated chat route sends **`X-Shroud-Model`** (per [Shroud docs](https://docs.1claw.xyz/docs/guides/shroud)) as well as the JSON `model` field so the gateway picks the right id. See [Gemini rate limits](https://ai.google.dev/gemini-api/docs/rate-limits) for BYOK. Set **`SHROUD_DISABLE_GEMINI_DIRECT=1`** to always use Shroud `POST …/chat/completions` even when a Google key exists. **Other Shroud upstreams** use minimal non-streaming Shroud + `createDataStreamResponse` / `formatDataStreamPart` (or `pipeDataStreamToResponse` on Vite). **Do not** send `Authorization: Bearer …` to Shroud — use **`X-Shroud-Agent-Key`**. Optional: **`SHROUD_STREAM_CHUNK_CHARS`** (default `40`) for non-Gemini Shroud chunking.
 
-## Development
-
-```bash
-npm install
-npm run build       # compile with tsup
-npm run dev         # watch mode
-npm start           # run locally
-```
-
 ## Publishing to npm
 
 Package name: **`scaffold-agent`** (unscoped). Listing: [npmjs.com/package/scaffold-agent](https://www.npmjs.com/package/scaffold-agent).
@@ -222,6 +213,22 @@ This project builds on ideas and tooling from the Ethereum builder community:
 - **[Scaffold-ETH 2](https://scaffoldeth.io)** / **[scaffold-eth/scaffold-eth-2](https://github.com/scaffold-eth/scaffold-eth-2)** — monorepo patterns, RainbowKit/wagmi/viem stack, and UX inspiration for onchain apps.
 - **[BuidlGuidl](https://BuidlGuidl.com)** — education and builder tooling for the ecosystem.
 - **Burner wallet** — local dev wallet UX via **[burner-connector](https://github.com/scaffold-eth/burner-connector)** (Scaffold-ETH / BuidlGuidl–style), used when the generated app targets **localhost**.
+
+## Developer Documentation
+
+To **build and run this CLI locally** from a clone (test changes before publishing or using `npx`):
+
+```bash
+npm install
+npm run build
+node dist/cli.js
+```
+
+That runs the same entry as **`scaffold-agent`** / **`npx scaffold-agent`** after a successful build. **`npm start`** is equivalent to **`node dist/cli.js`**. Use **`node dist/cli.js --help`** for the full flag list.
+
+While iterating on **`src/`**, **`npm run dev`** runs **`tsup --watch`** so **`dist/cli.js`** stays rebuilt on save. After touching **`src/cli.ts`**, **`src/cli-argv.ts`**, **`src/cli-wizard.ts`**, or **`src/actions/scaffold.ts`**, run **`npm run build`** (or keep **`npm run dev`** running) before testing the CLI.
+
+Contributor-oriented details: **[`AGENTS.md`](./AGENTS.md)**.
 
 ## License
 
