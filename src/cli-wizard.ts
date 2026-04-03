@@ -17,6 +17,9 @@ import {
   promptPQNetwork,
   promptPQScheme,
   promptBundlerUrl,
+  promptGenerateDeployerAccount,
+  promptDeployerWhenNotGenerated,
+  promptExistingDeployerPrivateKey,
 } from "./prompts.js";
 import type { AgentIdentityMode } from "./prompts.js";
 import {
@@ -79,6 +82,8 @@ export type GatheredWizard = {
   pqScheme: PQScheme | undefined;
   pqFactoryAddress: string | undefined;
   bundlerUrl: string | undefined;
+  /** Undefined = generate a new wallet. Set = reuse this private key as deployer. */
+  deployerPrivateKey: string | undefined;
 };
 
 function niErr(msg: string): never {
@@ -438,6 +443,19 @@ export async function gatherWizardInputs(
     }
   }
 
+  // ── Deployer wallet ──────────────────────────────────────────────────────
+  let deployerPrivateKey: string | undefined = v["deployer-private-key"]?.trim() || undefined;
+  if (!deployerPrivateKey && !nonInteractive) {
+    const generate = await promptGenerateDeployerAccount();
+    if (!generate) {
+      const choice = await promptDeployerWhenNotGenerated();
+      if (choice === "enter_now") {
+        deployerPrivateKey = await promptExistingDeployerPrivateKey();
+      }
+      // "skip" → deployerPrivateKey stays undefined → cli.ts generates a temporary wallet
+    }
+  }
+
   return {
     projectName,
     secrets,
@@ -462,5 +480,6 @@ export async function gatherWizardInputs(
     pqScheme,
     pqFactoryAddress,
     bundlerUrl,
+    deployerPrivateKey,
   };
 }
