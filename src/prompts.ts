@@ -5,9 +5,19 @@ import type {
   ChainFramework,
   AppFramework,
   LlmProvider,
+  PQScheme,
   ShroudBillingMode,
   ShroudUpstreamProvider,
 } from "./types.js";
+import {
+  availableNetworks,
+  availableSchemesForNetwork,
+  getBundlerHint,
+  NETWORK_LABELS,
+  SCHEME_LABELS,
+  type PQNetworkKey,
+  type PQSchemeKey,
+} from "./pq-deployments.js";
 import {
   isValidEthAddress,
   isValidPrivateKey,
@@ -110,17 +120,26 @@ export async function promptSecrets(): Promise<SecretsConfig> {
   return config;
 }
 
-export async function promptIdentity(useOneClaw: boolean): Promise<boolean> {
-  return select<boolean>({
+export type AgentIdentityMode = "standard" | "pq" | "none";
+
+export async function promptIdentity(useOneClaw: boolean): Promise<AgentIdentityMode> {
+  return select<AgentIdentityMode>({
     message: "Generate Agent Identity?",
     choices: [
       {
-        value: true,
+        value: "standard" as const,
         name: useOneClaw
-          ? "Yes (via 1Claw — generate agent & associate with your account)"
-          : "Yes (generate locally)",
+          ? "Yes — standard ECDSA wallet (via 1Claw)"
+          : "Yes — standard ECDSA wallet",
+        description: "secp256k1 keypair; AGENT_ADDRESS + AGENT_PRIVATE_KEY",
       },
-      { value: false, name: "No" },
+      {
+        value: "pq" as const,
+        name: "Yes — post-quantum smart account (ERC-4337 + ML-DSA-44)",
+        description:
+          "ZKNOX hybrid: ECDSA secp256k1 + ML-DSA-44. Both signatures required on every tx.",
+      },
+      { value: "none" as const, name: "No" },
     ],
   });
 }
@@ -477,6 +496,55 @@ export async function promptChain(): Promise<ChainFramework> {
       { value: "hardhat" as const, name: "Hardhat" },
       { value: "none" as const, name: "None" },
     ],
+  });
+}
+
+export async function promptPQAccount(): Promise<boolean> {
+  return select<boolean>({
+    message: "Enable post-quantum smart account (ERC-4337 + ML-DSA-44 hybrid)?",
+    choices: [
+      {
+        value: false,
+        name: "No",
+      },
+      {
+        value: true,
+        name: "Yes — ZKNOX ERC-4337 hybrid (ECDSA + ML-DSA-44)",
+        description:
+          "Requires a ZKNOX factory address and ERC-4337 bundler URL. Adds @noble/post-quantum + ethers to the app.",
+      },
+    ],
+  });
+}
+
+export async function promptPQNetwork(): Promise<PQNetworkKey> {
+  const networks = availableNetworks();
+  return select<PQNetworkKey>({
+    message: "Which network for the PQ smart account?",
+    choices: networks.map((n) => ({
+      value: n,
+      name: NETWORK_LABELS[n],
+    })),
+  });
+}
+
+export async function promptPQScheme(network: PQNetworkKey): Promise<PQSchemeKey> {
+  const schemes = availableSchemesForNetwork(network);
+  return select<PQSchemeKey>({
+    message: "Post-quantum signature scheme?",
+    choices: schemes.map((s, i) => ({
+      value: s,
+      name: SCHEME_LABELS[s] + (i === 0 ? " [Recommended]" : ""),
+    })),
+  });
+}
+
+export async function promptBundlerUrl(network: PQNetworkKey): Promise<string> {
+  const hint = getBundlerHint(network);
+  return input({
+    message: "ERC-4337 bundler URL:",
+    default: hint,
+    validate: (val) => (val.trim() ? true : "Bundler URL is required"),
   });
 }
 

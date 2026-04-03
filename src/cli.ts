@@ -18,7 +18,7 @@ import {
   type AgentFileExtras,
 } from "./agent-project-config.js";
 import { shroudProviderVaultKeyPath } from "./shroud-paths.js";
-import { generateWallet } from "./actions/keys.js";
+import { generatePQSeed, generateWallet } from "./actions/keys.js";
 import { writeEnvFile } from "./actions/env.js";
 import { setupOneClaw } from "./actions/oneclaw.js";
 import { scaffoldProject } from "./actions/scaffold.js";
@@ -98,6 +98,13 @@ Shroud (only when --llm oneclaw):
   --shroud-provider-api-key   Upstream API key for provider_api_key mode (vault or .env)
   --oneclaw-agent-id <uuid>   Required with -y when --secrets is not oneclaw and --llm oneclaw
   --oneclaw-agent-api-key     Agent ocv_ key (same conditions)
+
+Post-quantum smart account (ERC-4337 + ML-DSA-44 hybrid):
+  --pq-account                Enable ZKNOX ERC-4337 smart account (ECDSA + ML-DSA-44)
+  --pq-network <network>      sepolia | arbitrumSepolia | baseSepolia  (default: sepolia)
+  --pq-scheme <scheme>        mldsa | falcon | mldsaeth | ethfalcon  (default: mldsa)
+  --pq-factory-address <addr> Override factory address (auto-resolved from deployments if omitted)
+  --bundler-url <url>         ERC-4337 bundler URL (e.g. Pimlico)
 
 Chain & UI:
   --chain <framework>         foundry | hardhat | none
@@ -420,6 +427,25 @@ async function main() {
     }
   }
 
+  // ── Post-quantum smart account ───────────────────────────────────────
+  let pqSeed: string | undefined;
+  if (w.pqAccount && agent) {
+    section("Post-Quantum Smart Account");
+    pqSeed = generatePQSeed();
+    success("Generated post-quantum seed (ML-DSA-44)");
+    info(`Network: ${w.pqNetwork} (chainId ${w.pqChainId})`);
+    info(`Scheme:  ${w.pqScheme}`);
+    info(`Factory: ${w.pqFactoryAddress}`);
+    console.log("");
+    info(
+      `Fund ${chalk.cyan(deployer.address)} with testnet ETH on ${w.pqNetwork}`,
+    );
+    info(
+      "Then run: " + chalk.cyan("node scripts/deploy-pq-account.mjs") +
+      " to deploy your smart account.",
+    );
+  }
+
   // ── 1Claw vault setup ────────────────────────────────────────────────
   let vaultId: string | undefined;
   let oneClawAgentInfo: { id: string; apiKey: string } | undefined;
@@ -502,6 +528,17 @@ async function main() {
     shroudBillingMode,
     oneClawVaultId: vaultId,
     agentConfigExtra: w.agentFileExtras?.extra,
+    pqAccount:
+      w.pqAccount && agent && pqSeed
+        ? {
+            scheme: w.pqScheme ?? "mldsa",
+            network: w.pqNetwork ?? "sepolia",
+            chainId: w.pqChainId ?? 11155111,
+            postQuantumSeed: pqSeed,
+            factoryAddress: w.pqFactoryAddress ?? "",
+            bundlerUrl: w.bundlerUrl ?? "",
+          }
+        : undefined,
   };
 
   try {
@@ -533,6 +570,25 @@ async function main() {
       privateKey,
     }));
     envVars["SWARM_AGENT_KEYS_JSON"] = JSON.stringify(extraKeys);
+  }
+
+  if (pqSeed && w.pqAccount) {
+    envVars["POST_QUANTUM_SEED"] = pqSeed;
+    envVars["PQ_NETWORK"] = w.pqNetwork ?? "sepolia";
+    envVars["PQ_CHAIN_ID"] = String(w.pqChainId ?? 11155111);
+    envVars["PQ_SCHEME"] = w.pqScheme ?? "mldsa";
+    envVars["PQ_FACTORY_ADDRESS"] = w.pqFactoryAddress ?? "";
+    envVars["BUNDLER_URL"] = w.bundlerUrl ?? "";
+    // PQ_ACCOUNT_ADDRESS will be written by scripts/deploy-pq-account.mjs after deployment
+    envVars["PQ_ACCOUNT_ADDRESS"] = "";
+    if (framework === "nextjs") {
+      envVars["NEXT_PUBLIC_PQ_FACTORY_ADDRESS"] = w.pqFactoryAddress ?? "";
+      envVars["NEXT_PUBLIC_BUNDLER_URL"] = w.bundlerUrl ?? "";
+    }
+    if (framework === "vite") {
+      envVars["VITE_PQ_FACTORY_ADDRESS"] = w.pqFactoryAddress ?? "";
+      envVars["VITE_BUNDLER_URL"] = w.bundlerUrl ?? "";
+    }
   }
 
   if (framework === "nextjs") {

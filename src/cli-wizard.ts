@@ -1,5 +1,5 @@
 import { select, password } from "@inquirer/prompts";
-import type { SecretsConfig } from "./types.js";
+import type { PQScheme, SecretsConfig } from "./types.js";
 import {
   promptSecrets,
   promptIdentity,
@@ -14,7 +14,19 @@ import {
   promptChain,
   promptFramework,
   promptProjectName,
+  promptPQNetwork,
+  promptPQScheme,
+  promptBundlerUrl,
 } from "./prompts.js";
+import type { AgentIdentityMode } from "./prompts.js";
+import {
+  availableSchemesForNetwork,
+  getChainId,
+  getFactoryAddress,
+  getBundlerHint,
+  type PQNetworkKey,
+  type PQSchemeKey,
+} from "./pq-deployments.js";
 import { shroudProviderVaultKeyPath } from "./shroud-paths.js";
 import type {
   AppFramework,
@@ -61,6 +73,12 @@ export type GatheredWizard = {
   /** Wallets to generate when generateAgent (ids + optional presets). */
   swarmEntries: SwarmPlanEntry[];
   agentFileExtras: AgentFileExtras | null;
+  pqAccount: boolean;
+  pqNetwork: string | undefined;
+  pqChainId: number | undefined;
+  pqScheme: PQScheme | undefined;
+  pqFactoryAddress: string | undefined;
+  bundlerUrl: string | undefined;
 };
 
 function niErr(msg: string): never {
@@ -173,12 +191,17 @@ export async function gatherWizardInputs(
     : await secretsFromFlagsInteractive(v);
 
   let generateAgent: boolean;
+  // identityFromPrompt tracks whether the interactive promptIdentity already
+  // captured the PQ choice so we can skip the separate promptPQAccount later.
+  let identityFromPrompt: AgentIdentityMode | undefined;
+
   if (nonInteractive) {
     generateAgent = parseAgentFlag(v.agent, true);
   } else if (v.agent !== undefined && v.agent !== "") {
     generateAgent = parseAgentFlag(v.agent, false);
   } else {
-    generateAgent = await promptIdentity(secrets.mode === "oneclaw");
+    identityFromPrompt = await promptIdentity(secrets.mode === "oneclaw");
+    generateAgent = identityFromPrompt !== "none";
   }
 
   const extras = fileExtras ?? null;
@@ -344,6 +367,77 @@ export async function gatherWizardInputs(
     framework = await promptFramework();
   }
 
+  // ── Post-quantum smart account ───────────────────────────────────────────
+  let pqAccount: boolean;
+  let pqScheme: PQScheme | undefined;
+  let pqFactoryAddress: string | undefined;
+  let bundlerUrl: string | undefined;
+
+  if (nonInteractive) {
+    pqAccount = Boolean(v["pq-account"]);
+  } else if (v["pq-account"] !== undefined) {
+    pqAccount = Boolean(v["pq-account"]);
+  } else if (identityFromPrompt !== undefined) {
+    // Identity was already chosen via promptIdentity — no separate PQ prompt needed.
+    pqAccount = identityFromPrompt === "pq";
+  } else {
+    // --agent flag was provided interactively but no --pq-account flag — default off.
+    pqAccount = false;
+  }
+
+  let pqNetwork: string | undefined;
+  let pqChainId: number | undefined;
+
+  if (pqAccount) {
+    if (nonInteractive) {
+      const net = (v["pq-network"] ?? "sepolia") as PQNetworkKey;
+      pqNetwork = net;
+      pqChainId = getChainId(net);
+      pqScheme = (v["pq-scheme"] as PQScheme | undefined) ?? "mldsa";
+      // Factory auto-resolved; --pq-factory-address overrides
+      pqFactoryAddress =
+        v["pq-factory-address"] ??
+        getFactoryAddress(net, pqScheme as PQSchemeKey) ??
+        "";
+      bundlerUrl = v["bundler-url"] ?? getBundlerHint(net);
+    } else {
+      // Network selection
+      const net: PQNetworkKey =
+        v["pq-network"] !== undefined && v["pq-network"] !== ""
+          ? (v["pq-network"] as PQNetworkKey)
+          : await promptPQNetwork();
+      pqNetwork = net;
+      pqChainId = getChainId(net);
+
+      // Scheme — filtered to what's deployed on the chosen network
+      const availableSchemes = availableSchemesForNetwork(net);
+      const rawScheme = v["pq-scheme"];
+      pqScheme =
+        rawScheme !== undefined && rawScheme !== ""
+          ? (rawScheme as PQScheme)
+          : (await promptPQScheme(net)) as PQScheme;
+
+      // Validate scheme is available on this network
+      if (!availableSchemes.includes(pqScheme as PQSchemeKey)) {
+        throw new Error(
+          `Scheme "${pqScheme}" is not deployed on ${pqNetwork}. Available: ${availableSchemes.join(", ")}`,
+        );
+      }
+
+      // Factory address — auto from deployments, --pq-factory-address overrides
+      pqFactoryAddress =
+        v["pq-factory-address"] !== undefined && v["pq-factory-address"] !== ""
+          ? v["pq-factory-address"]
+          : (getFactoryAddress(net, pqScheme as PQSchemeKey) ?? "");
+
+      // Bundler URL — default hint for selected network
+      bundlerUrl =
+        v["bundler-url"] !== undefined && v["bundler-url"] !== ""
+          ? v["bundler-url"]
+          : await promptBundlerUrl(net);
+    }
+  }
+
   return {
     projectName,
     secrets,
@@ -362,5 +456,11 @@ export async function gatherWizardInputs(
     skipAutoFund,
     swarmEntries,
     agentFileExtras: extras,
+    pqAccount,
+    pqNetwork,
+    pqChainId,
+    pqScheme,
+    pqFactoryAddress,
+    bundlerUrl,
   };
 }

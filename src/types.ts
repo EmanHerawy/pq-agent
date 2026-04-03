@@ -36,6 +36,22 @@ export interface SwarmAgentDef {
   preset?: string;
 }
 
+export type PQScheme = "mldsa" | "falcon" | "mldsaeth" | "ethfalcon";
+
+export interface PQAccountConfig {
+  scheme: PQScheme;
+  /** Network key from PQ_DEPLOYMENTS (e.g. "sepolia") */
+  network: string;
+  /** Chain ID of the selected network */
+  chainId: number;
+  /** 32-byte hex seed (0x + 64 hex) — secret, stored in POST_QUANTUM_SEED */
+  postQuantumSeed: string;
+  /** ZKNOX factory contract address (auto-resolved from deployments) */
+  factoryAddress: string;
+  /** ERC-4337 bundler URL (e.g. Pimlico) */
+  bundlerUrl: string;
+}
+
 export interface IdentityConfig {
   generateAgent: boolean;
   agentAddress?: string;
@@ -71,4 +87,6 @@ export interface ScaffoldConfig {
   oneClawVaultId?: string;
   /** Opaque blob from `agent.json` `extra` (passed to templates / future use). */
   agentConfigExtra?: unknown;
+  /** ERC-4337 smart account with post-quantum hybrid signatures (ML-DSA-44 + ECDSA). */
+  pqAccount?: PQAccountConfig;
 }

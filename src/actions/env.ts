@@ -24,6 +24,8 @@ export const ENV_SECRET_KEY_NAMES = [
   "GOOGLE_GENERATIVE_AI_API_KEY",
   "ANTHROPIC_API_KEY",
   "SHROUD_PROVIDER_API_KEY",
+  /** Post-quantum seed — treat like a private key, never expose to browser */
+  "POST_QUANTUM_SEED",
 ] as const;
 
 const SECRET_KEYS = new Set<string>(ENV_SECRET_KEY_NAMES as unknown as string[]);

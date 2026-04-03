@@ -29,6 +29,15 @@ import {
   agentSwarmContextSource,
   swarmPageSource,
 } from "../scaffold-templates/agent-swarm.js";
+import {
+  pqHexSource,
+  pqUtilsMldsaSource,
+  pqCreateAccountSource,
+  pqUserOperationSource,
+  pqSendTransactionSource,
+  pqConfigSource,
+  deployPQAccountScriptSource,
+} from "../scaffold-templates/pq-account.js";
 import { balancesPageSource } from "../scaffold-templates/balances-page.js";
 import { ensPageSource } from "../scaffold-templates/ens-page.js";
 import { identityPageSource } from "../scaffold-templates/identity-page.js";
@@ -235,6 +244,12 @@ function writeRootFiles(root: string, config: ScaffoldConfig) {
     if (config.installAmpersendSdk) {
       rootDevDeps["@ampersend_ai/ampersend-sdk"] = AMPERSEND_SDK_VERSION;
     }
+  }
+  if (config.pqAccount) {
+    rootDevDeps["@noble/post-quantum"] = "^0.5.4";
+    rootDevDeps["@noble/hashes"] = "^2.0.1";
+    rootDevDeps["ethers"] = "^6.16.0";
+    rootDevDeps["dotenv"] = "^16.4.0";
   }
 
   const pkg = {
@@ -588,6 +603,15 @@ function writeJustfile(root: string, config: ScaffoldConfig) {
     "",
   );
 
+  if (config.pqAccount) {
+    lines.push(
+      "# Deploy ZKNOX post-quantum ERC-4337 smart account (fund DEPLOYER_ADDRESS first)",
+      "deploy-pq:",
+      "    node scripts/with-secrets.mjs -- node scripts/deploy-pq-account.mjs",
+      "",
+    );
+  }
+
   file(root, "justfile", lines.join("\n"));
 }
 
@@ -622,6 +646,10 @@ function writeScripts(root: string, config: ScaffoldConfig) {
     );
     file(scripts, "show-balances-all-chains.ts", getShowBalancesAllChainsScript());
     file(scripts, "swarm-agents.mjs", getSwarmAgentsScript());
+  }
+
+  if (config.pqAccount) {
+    file(scripts, "deploy-pq-account.mjs", deployPQAccountScriptSource());
   }
 
   // ── generate-abi-types.mjs ──────────────────────────────────────────────
@@ -2855,6 +2883,11 @@ function scaffoldNextJS(root: string, config: ScaffoldConfig) {
   if (config.installAmpersendSdk) {
     deps["@ampersend_ai/ampersend-sdk"] = AMPERSEND_SDK_VERSION;
   }
+  if (config.pqAccount) {
+    deps["@noble/post-quantum"] = "^0.5.4";
+    deps["@noble/hashes"] = "^2.0.1";
+    deps["ethers"] = "^6.16.0";
+  }
 
   file(
     pkg,
@@ -3028,6 +3061,16 @@ module.exports = nextConfig;
   file(pkg, "lib/burner-auto-connect.tsx", burnerAutoConnectSource());
   file(pkg, "lib/wagmi-config.ts", wagmiConfigSource(config.projectName, "next"));
   file(pkg, "lib/web3-providers.tsx", web3ProvidersSource("next"));
+
+  if (config.pqAccount) {
+    const pqDir = dir(pkg, "lib", "pq");
+    file(pqDir, "hex.ts", pqHexSource());
+    file(pqDir, "utils-mldsa.ts", pqUtilsMldsaSource());
+    file(pqDir, "create-account.ts", pqCreateAccountSource());
+    file(pqDir, "user-operation.ts", pqUserOperationSource());
+    file(pqDir, "send-transaction.ts", pqSendTransactionSource());
+    file(pqDir, "pq-config.ts", pqConfigSource("nextjs"));
+  }
   file(pkg, "components/ConnectWalletButton.tsx", connectWalletButtonSource());
   file(pkg, "components/LocalFaucetButton.tsx", localFaucetButtonSource());
   file(
@@ -3718,6 +3761,11 @@ function scaffoldVite(root: string, config: ScaffoldConfig) {
   if (config.installAmpersendSdk) {
     deps["@ampersend_ai/ampersend-sdk"] = AMPERSEND_SDK_VERSION;
   }
+  if (config.pqAccount) {
+    deps["@noble/post-quantum"] = "^0.5.4";
+    deps["@noble/hashes"] = "^2.0.1";
+    deps["ethers"] = "^6.16.0";
+  }
 
   file(
     pkg,
@@ -3842,6 +3890,16 @@ interface ImportMeta {
   file(pkg, "src/lib/agent-swarm.tsx", agentSwarmContextSource("vite"));
   file(pkg, "src/lib/wagmi-config.ts", wagmiConfigSource(config.projectName, "vite"));
   file(pkg, "src/lib/web3-providers.tsx", web3ProvidersSource("vite"));
+
+  if (config.pqAccount) {
+    const pqDir = dir(pkg, "src", "lib", "pq");
+    file(pqDir, "hex.ts", pqHexSource());
+    file(pqDir, "utils-mldsa.ts", pqUtilsMldsaSource());
+    file(pqDir, "create-account.ts", pqCreateAccountSource());
+    file(pqDir, "user-operation.ts", pqUserOperationSource());
+    file(pqDir, "send-transaction.ts", pqSendTransactionSource());
+    file(pqDir, "pq-config.ts", pqConfigSource("vite"));
+  }
   file(pkg, "src/components/ConnectWalletButton.tsx", connectWalletButtonSource());
   file(pkg, "src/components/PageLoading.tsx", vitePageLoadingSource());
   file(pkg, "src/components/ui/button.tsx", BUTTON_TSX);

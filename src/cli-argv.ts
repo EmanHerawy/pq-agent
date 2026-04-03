@@ -70,6 +70,16 @@ export type CliFlagValues = {
   "dump-config"?: boolean;
   /** Write --dump-config output to this file instead of stdout. */
   "dump-config-out"?: string;
+  /** Enable ERC-4337 post-quantum smart account (ML-DSA-44 hybrid). */
+  "pq-account"?: boolean;
+  /** Network for PQ account: sepolia | arbitrumSepolia | baseSepolia. */
+  "pq-network"?: string;
+  /** Post-quantum scheme: mldsa | falcon | mldsaeth | ethfalcon (default: mldsa). */
+  "pq-scheme"?: string;
+  /** Override ZKNOX factory address (auto-resolved from deployments if omitted). */
+  "pq-factory-address"?: string;
+  /** ERC-4337 bundler URL (e.g. Pimlico). */
+  "bundler-url"?: string;
 };
 
 export type ParsedScaffoldArgv = {
@@ -142,6 +152,11 @@ export function parseScaffoldArgv(argv: string[]): ParsedScaffoldArgv {
       "from-config": { type: "string" },
       "dump-config": { type: "boolean" },
       "dump-config-out": { type: "string" },
+      "pq-account": { type: "boolean" },
+      "pq-network": { type: "string" },
+      "pq-scheme": { type: "string" },
+      "pq-factory-address": { type: "string" },
+      "bundler-url": { type: "string" },
     },
     allowPositionals: true,
     strict: true,

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { isAddress } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import type { WalletInfo } from "../types.js";
@@ -24,6 +25,11 @@ export function normalize0xHex(val: string): `0x${string}` {
   const body =
     raw.startsWith("0x") || raw.startsWith("0X") ? raw.slice(2) : raw;
   return (`0x${body.toLowerCase()}`) as `0x${string}`;
+}
+
+/** Generate a 32-byte random hex seed for the post-quantum key (0x + 64 hex chars). */
+export function generatePQSeed(): string {
+  return "0x" + randomBytes(32).toString("hex");
 }
 
 export function generateWallet(): WalletInfo {
