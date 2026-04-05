@@ -37,6 +37,7 @@ import {
   pqSendTransactionSource,
   pqConfigSource,
   deployPQAccountScriptSource,
+  deployPQAccountArcScriptSource,
   sendPQTransactionScriptSource,
   registerWorldAgentScriptSource,
   ledgerTransportSource,
@@ -615,9 +616,13 @@ function writeJustfile(root: string, config: ScaffoldConfig) {
 
   if (config.pqAccount) {
     lines.push(
-      "# Deploy ZKNOX post-quantum ERC-4337 smart account (fund DEPLOYER_ADDRESS first)",
+      "# Deploy ZKNOX PQ account on Sepolia (t1 pre-shifted — old verifier bytecode)",
       "deploy-pq:",
       "    node scripts/with-secrets.mjs -- node scripts/deploy-pq-account.mjs",
+      "",
+      "# Deploy ZKNOX PQ account on ARC testnet or Base Sepolia (t1 raw — new verifier bytecode)",
+      "deploy-pq-arc:",
+      "    node scripts/with-secrets.mjs -- node scripts/deploy-pq-account-arc.mjs",
       "",
       "# Send ETH from the PQ smart account via ERC-4337 bundler",
       "# Usage: just send-pq to=0xRecipient amount=0.0001",
@@ -674,6 +679,7 @@ function writeScripts(root: string, config: ScaffoldConfig) {
 
   if (config.pqAccount) {
     file(scripts, "deploy-pq-account.mjs", deployPQAccountScriptSource());
+    file(scripts, "deploy-pq-account-arc.mjs", deployPQAccountArcScriptSource());
     file(scripts, "send-pq-transaction.mjs", sendPQTransactionScriptSource());
     file(scripts, "register-world-agent.mjs", registerWorldAgentScriptSource());
     file(scripts, "ledger-transport.mjs", ledgerTransportSource());

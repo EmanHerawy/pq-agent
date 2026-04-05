@@ -849,6 +849,25 @@ function writeEnvVar(key, value) {
 }
 
 /**
+ * Deploy script variant for ARC testnet and Base Sepolia.
+ *
+ * Identical to deployPQAccountScriptSource() EXCEPT t1 is stored RAW (no pre-shift,
+ * no NTT). The on-chain ZKNOX_dilithium verifier deployed on ARC / Base Sepolia
+ * (V0_0_10 bytecode) applies the D-shift and NTT itself inside verifyInternal.
+ *
+ * The original Sepolia factory was deployed against an OLDER verifier bytecode that
+ * expected t1 to be pre-shifted+NTT'd in the PKContract. Use the original
+ * deploy-pq-account.mjs for Sepolia and this file for ARC / Base Sepolia.
+ */
+export function deployPQAccountArcScriptSource(): string {
+  return deployPQAccountScriptSource().replace(
+    "t1.forEach(poly => { for (let i = 0; i < _N; i++) poly[i] <<= _D; NTT.encode(poly); });",
+    "// t1 stored RAW — the on-chain verifier (ARC/Base Sepolia) applies shift+NTT itself.\n" +
+    "  // Do NOT pre-apply here; the older Sepolia verifier expected pre-transformed t1."
+  );
+}
+
+/**
  * Node.js send-transaction script (scripts/send-pq-transaction.mjs).
  * Sends ETH from a deployed PQ smart account via ERC-4337 bundler.
  *
