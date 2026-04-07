@@ -1176,7 +1176,10 @@ export function ledgerTransportSource(): string {
  *
  * Requires the ZKNOX PQ Ledger app on the device.
  */
-import TransportNodeHid from "@ledgerhq/hw-transport-node-hid";
+import { createRequire } from "node:module";
+const _require = createRequire(import.meta.url);
+const TransportNodeHid = _require("@ledgerhq/hw-transport-node-hid").default
+  ?? _require("@ledgerhq/hw-transport-node-hid");
 import { ethers } from "ethers";
 
 const CLA = 0xe0;
